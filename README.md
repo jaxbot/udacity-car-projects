@@ -29,7 +29,7 @@ The Hough Lines algorithm is then used to retrieve a list of lines from our crop
 
 These lines are passed into a new method, `average_line`, which also accepts a horizontal cut off to segment left and right lanes. Lines within the specified horizontal segment have their slopes calculated per `m = (y2 - y1) / (x2 - x1)`. This is used to derive a y-intersect, `b`, and extrapolate two x-values for our line. These x-values are added to upper and lower arrays, and averaged together to give us an average line from the bottom to top of the image. This line is averaged with the past three frames to provide a smoothing effect like seen in the example video, and to prevent a single confusing frame from derivating the line significantly.
 
-`draw_lines()` was simplified to draw a 1D array of lines, and is finally called to render two straight lines from the left and right lanes on our image.
+`draw_lines()` was simplified to draw a 1D array of lines, and is finally called to render two straight lines from the left and right lanes on our image that are derived from extrapolating the hough lines in `road_lines`.
 
 ![Pipeline run on solidWhiteRight][image1]
 
