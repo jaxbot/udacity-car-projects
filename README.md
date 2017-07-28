@@ -52,3 +52,10 @@ jupyter notebook Traffic_Sign_Classifier.ipynb
 
 ### Requirements for Submission
 Follow the instructions in the `Traffic_Sign_Classifier.ipynb` notebook and write the project report using the writeup template as a guide, `writeup_template.md`. Submit the project code and writeup document.
+
+
+# Writeup
+
+100 Epoch validation accuracy: 0.923
+100 Epoch validation accuracy w/ normalize: 0.950
+100 Epoch validation accuracy w/ transforms: 
