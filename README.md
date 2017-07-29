@@ -21,7 +21,9 @@ The goals / steps of this project are the following:
 [gts-4]: ./signs-from-web/german_sign_4.jpg "GTS4"
 [gts-7]: ./signs-from-web/german_sign_7.jpg "GTS7"
 [gts-8]: ./signs-from-web/german_sign_8.jpg "GTS8"
-[exploration]: ./examples/explore.png "Dataset exploration"
+[exploration_1]: ./examples/explore.png "Dataset exploration"
+[exploration_2]: ./examples/explore_test.png "Dataset exploration"
+[exploration_3]: ./examples/explore_train.png "Dataset exploration"
 
 ## Rubric Points
 
@@ -50,7 +52,9 @@ Pandas was utilized to generate the following analysis, found in the ipynb file:
 
 Here is an exploratory visualization of the data set that demonstrates through histograms that the distribution is consistent between test, validation, and training datasets.
 
-![distribution of training, validation, and test classes][exploration]
+![distribution of training, validation, and test classes][exploration_1]
+![distribution of training, validation, and test classes][exploration_2]
+![distribution of training, validation, and test classes][exploration_3]
 
 The most common signs in the dataset are:
 
