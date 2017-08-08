@@ -1,4 +1,4 @@
-#**Behavioral Cloning** 
+# Behavioral Cloning 
 
 Jonathan Warner, with sources from Udacity CarND nanodegree.
 
@@ -25,12 +25,13 @@ The goals / steps of this project are the following:
 [track2_gif]: ./output/track2.gif "Track 2 driving gif"
 
 ## Rubric Points
-###Here I will consider the [rubric points](https://review.udacity.com/#!/rubrics/432/view) individually and describe how I addressed each point in my implementation.  
+
+Here I will consider the [rubric points](https://review.udacity.com/#!/rubrics/432/view) individually and describe how I addressed each point in my implementation.  
 
 ---
-###Files Submitted & Code Quality
+### Files Submitted & Code Quality
 
-####1. Submission includes all required files and can be used to run the simulator in autonomous mode
+#### 1. Submission includes all required files and can be used to run the simulator in autonomous mode
 
 My project includes the following files:
 * train.py containing the script to create and train the model
@@ -38,36 +39,36 @@ My project includes the following files:
 * model.h5 containing a trained convolution neural network 
 * WRITEUP.md summarizing the results
 
-####2. Submission includes functional code
+#### 2. Submission includes functional code
 
 Using the Udacity provided simulator and my drive.py file, the car can be driven autonomously around the track by executing 
 ```sh
 python drive.py model.h5
 ```
 
-####3. Submission code is usable and readable
+#### 3. Submission code is usable and readable
 
 The model.py file contains the code for training and saving the convolution neural network. The file shows the pipeline I used for training and validating the model, and it contains comments to explain how the code works.
 
-###Model Architecture and Training Strategy
+### Model Architecture and Training Strategy
 
-####1. An appropriate model architecture has been employed
+#### 1. An appropriate model architecture has been employed
 
 My model is based on the [NVIDIA end to end deep learning architecture](https://devblogs.nvidia.com/parallelforall/deep-learning-self-driving-cars/).
 
-Dropout was added (line 106) to reduce overfitting the model.
+Dropout was added to reduce overfitting the model.
 
 The data is normalized using a lambda layer, and the hood section of the car (bottom 25 pixels) and some tree line (top 70 pixels) are removed to reduce noise that is irrelevant to the driving model. In addition, RELUs are used to introduce non-linearity into the model, as is true with NVIDIA's architecture.
 
-####2. Attempts to reduce overfitting in the model
+#### 2. Attempts to reduce overfitting in the model
 
 In addition to the dropout layer mentioned above, multiple training datasets were used to train the model, including one where the car was turned around and looped the track backwards.
 
-####3. Model parameter tuning
+#### 3. Model parameter tuning
 
 The model used an adam optimizer with default learning rate params from Keras.
 
-####4. Appropriate training data
+#### 4. Appropriate training data
 
 In addition to the sample Udacity data, the training data I created includes:
 
@@ -82,9 +83,9 @@ Training data was augmented by using left, center, and right images, and flippin
 
 To adjust the steering angle, a static factor of +-0.2 was utilized, as given in the lecture videos.
 
-###Model Architecture and Training Strategy
+### Model Architecture and Training Strategy
 
-####1. Solution Design Approach
+#### 1. Solution Design Approach
 
 The overall strategy for deriving a model architecture was to follow nvidia's proven example for driving a car with E2E deep learning using camera input. This seemed like a appropriate fit because the task at hand is almost identical, just with a simulator instead of real life.
 
@@ -92,7 +93,7 @@ With just the track 1 training data, the model drove decently on track 1, but wi
 
 When testing on track 2, the data from track 1 was not general enough to sufficiently drive the track at all. After training with a single loop of track 2 at 5 epochs, the car drove almost the entire track 2 successfully, but consistently hit a wall on one of the turns. I reloaded the model and trained a single epoch on additional loop of track 2 and the model was then able to sufficiently drive on both track 1 and track 2.
 
-####2. Final Model Architecture
+#### 2. Final Model Architecture
 
 ![Keras model architecture based on NVIDIA's drive architecture][model]
 
@@ -100,7 +101,7 @@ The details of the model can further be explored in Tensorboard using the includ
 
 ![Screenshot of Tensorboard][tensorboard]
 
-####3. Training Process
+#### 3. Training Process
 
 Including all training data sets, I ended up with 28807 samples.
 
@@ -114,3 +115,7 @@ The model results can be seen in the following GIFs, or as videos in the output 
 
 ![Track 1 animation][track1_gif]
 ![Track 2 animation][track2_gif]
+
+Track 2 was a particularly interesting challenge because sections of the road are visible in the distance through some of the curves, and the car enters shadows occasionally which sigificantly changes the color of the road. However, with just a single loop of the track, the model was able to generalize enough to complete almost an entire perfect loop.
+
+![Track 2 driving into a shadow][track2]
