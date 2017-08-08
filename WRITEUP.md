@@ -19,7 +19,7 @@ The goals / steps of this project are the following:
 [model]: ./examples/model.png "Model Visualization"
 [tensorboard]: ./examples/tensorboard.png "Tensorboard"
 [track1]: ./examples/track_1.jpg "Track 1 driving example"
-[track2]: ./examples/track_2.jpg "Track 2 driving example"
+[track2]: ./examples/track2.jpg "Track 2 driving example"
 [track1_leftcenterright]: ./examples/track1_leftcenterright.jpg "Track 1 multiple camera example"
 [track1_gif]: ./output/track1.gif "Track 1 driving gif"
 [track2_gif]: ./output/track2.gif "Track 2 driving gif"
