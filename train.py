@@ -2,23 +2,28 @@ import csv
 import numpy as np
 import cv2
 from keras.models import Sequential
+from keras.models import load_model
 from keras.layers import Flatten, Dense, Dropout, Lambda
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, Cropping2D
 from keras.optimizers import SGD
+from keras.callbacks import ModelCheckpoint
 from random import shuffle
 import sklearn.utils
 from sklearn.model_selection import train_test_split
 
-EPOCHS = 5
+EPOCHS = 1
 TRAINING_DATA_DIR = "training_data/"
 TRAINING_SETS = [
-        "track_1_loop_1",
-        "track_1_loop_2",
-        "track_1_loop_3",
-        "track_1_loop_backwards",
-        "track_1_recovery_1",
-        "track_1_recovery_2",
-        "track_1_recovery_3"]
+        "track_1_loop_1",            
+        "track_1_loop_2",            
+        "track_1_loop_3",            
+        "track_1_loop_backwards",    
+        "track_1_recovery_1",        
+        "track_1_recovery_2",        
+        "track_1_recovery_3",
+        "track_2_loop_1",
+        "track_2_loop_2",
+        "udacity_sample_track_1"]        
 STEERING_CORRECTION = 0.2
 
 def get_local_image_path(training_set, filename):
@@ -46,7 +51,7 @@ def load_all_training_sets():
 
     return samples
 
-def generator(samples, batch_size=128):
+def generator(samples, batch_size=64):
     num_samples = len(samples)
 
     while True:
@@ -57,27 +62,30 @@ def generator(samples, batch_size=128):
             images = []
             measurements = []
             for line in batch_samples:
-                center_image = load_image(line[0])
-                left_image = load_image(line[1])
-                right_image = load_image(line[2])
+                try:
+                    center_image = load_image(line[0])
+                    left_image = load_image(line[1])
+                    right_image = load_image(line[2])
 
-                steering_center = float(line[3])
-                steering_left = steering_center + STEERING_CORRECTION
-                steering_right = steering_center - STEERING_CORRECTION
+                    steering_center = float(line[3])
+                    steering_left = steering_center + STEERING_CORRECTION
+                    steering_right = steering_center - STEERING_CORRECTION
 
-                images.append(center_image)
-                images.append(left_image)
-                images.append(right_image)
-                measurements.append(steering_center)
-                measurements.append(steering_left)
-                measurements.append(steering_right)
+                    images.append(center_image)
+                    images.append(left_image)
+                    images.append(right_image)
+                    measurements.append(steering_center)
+                    measurements.append(steering_left)
+                    measurements.append(steering_right)
 
-                images.append(cv2.flip(center_image, 1))
-                images.append(cv2.flip(left_image, 1))
-                images.append(cv2.flip(right_image, 1))
-                measurements.append(-steering_center)
-                measurements.append(-steering_left)
-                measurements.append(-steering_right)
+                    images.append(cv2.flip(center_image, 1))
+                    images.append(cv2.flip(left_image, 1))
+                    images.append(cv2.flip(right_image, 1))
+                    measurements.append(-steering_center)
+                    measurements.append(-steering_left)
+                    measurements.append(-steering_right)
+                except:
+                    print("Failed to load", line[0], line[1], line[2])
 
 
             X_train = np.array(images)
@@ -89,6 +97,8 @@ train_samples, validation_samples = train_test_split(samples, test_size=0.2)
 train_generator = generator(train_samples)
 validation_generator = generator(validation_samples)
 
+print("Total samples: ", len(samples))
+"""
 model = Sequential()
 model.add(Lambda(lambda x: (x / 255.0) - 0.5, input_shape=(160,320,3)))
 model.add(Cropping2D(cropping=((70,25), (0,0))))
@@ -105,7 +115,9 @@ model.add(Dense(10))
 model.add(Dense(1))
 
 model.compile(loss='mse', optimizer='adam')
-model.fit_generator(train_generator, samples_per_epoch=len(train_samples), validation_data=validation_generator,
-        nb_val_samples=len(validation_samples), nb_epoch=EPOCHS)
 
-model.save('model.h5')
+save_checkpoint = ModelCheckpoint('model.h5', save_best_only=True)
+
+model.fit_generator(train_generator, samples_per_epoch=len(train_samples), validation_data=validation_generator,
+        nb_val_samples=len(validation_samples), nb_epoch=EPOCHS, callbacks=[save_checkpoint])
+"""
