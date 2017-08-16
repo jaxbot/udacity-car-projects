@@ -4,6 +4,9 @@ import matplotlib.image as mpimg
 from moviepy.editor import VideoFileClip
 import matplotlib.pyplot as plt
 
+
+VERBOSE = False
+
 # Calibrate camera
 
 def calibrate_camera(chess_img, board_size=(8,6)):
@@ -54,7 +57,7 @@ previous_frame = None
 iterations = 0
 
 def process_frame(frame):
-    global LEFT_LANE_LINE, RIGHT_LANE_LINE, CAMERA_MTX, CAMERA_DIST
+    global LEFT_LANE_LINE, RIGHT_LANE_LINE, CAMERA_MTX, CAMERA_DIST, VERBOSE
 
     img_size = (frame.shape[1], frame.shape[0])
 
@@ -68,7 +71,7 @@ def process_frame(frame):
     warp_matrix = cv2.getPerspectiveTransform(ROAD_TRANSFORM_SRC, ROAD_TRANSFORM_DEST)
     warped_image = cv2.warpPerspective(frame, warp_matrix, img_size, flags=cv2.INTER_LINEAR)
 
-    thresholded = thresholded_all(warped_image, s_threshold=(15,255))
+    thresholded = thresholded_all(warped_image, s_threshold=(20,255))
     thresholded = topdown_crop(thresholded)
 
     """
@@ -82,7 +85,7 @@ def process_frame(frame):
     else:
         LEFT_LANE_LINE, RIGHT_LANE_LINE = find_lane_lines(thresholded, LEFT_LANE_LINE, RIGHT_LANE_LINE)
 
-    #measure_curvature(left_fit, right_fit, leftx, rightx, lefty, righty, thresholded)
+    curve = measure_curvature(LEFT_LANE_LINE, RIGHT_LANE_LINE, thresholded)
 
     average_lines([LEFT_LANE_LINE, RIGHT_LANE_LINE])
 
@@ -93,15 +96,19 @@ def process_frame(frame):
     color_unwarp = cv2.warpPerspective(color_warp, warp_matrix, img_size, flags=cv2.INTER_LINEAR)
 
     result = cv2.addWeighted(frame, 1, color_unwarp, 0.3, 0)
-    cv2.imshow('img', thresholded)
-    cv2.imshow('img_warped', warped_image)
-    cv2.imshow('img_l', thresholded_lightness(warped_image))
-    cv2.imshow('img_sobel', thresholded_sobel(warped_image))
-    cv2.imshow('img_s', thresholded_saturation(warped_image))
-    cv2.imshow('img2', color_warp)
-    cv2.imshow('result', result)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+
+    cv2.putText(result, "CurveR: " + str(round(curve)) + "m", (50, result.shape[0] - 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+
+    if VERBOSE:
+        cv2.imshow('img', thresholded)
+        cv2.imshow('img_warped', warped_image)
+        cv2.imshow('img_l', thresholded_lightness(warped_image))
+        cv2.imshow('img_sobel', thresholded_sobel(warped_image))
+        cv2.imshow('img_s', thresholded_saturation(warped_image))
+        cv2.imshow('img2', color_warp)
+        cv2.imshow('result', result)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
     """
     cv2.imshow('img', result)
@@ -120,7 +127,7 @@ def average_lines(lines):
         line.best_fit = best_fit
         print("Len", len(line.fits), line.best_fit)
 
-        if len(line.fits) > 4 and line.detected:
+        if len(line.fits) > 6 and line.detected:
             line.fits.pop(0)
 
 def draw_lines(left_lane, right_lane, img):
@@ -145,27 +152,29 @@ def draw_lines(left_lane, right_lane, img):
 
     return color_warp
 
-def measure_curvature(left_fit, right_fit, leftx, rightx, lefty, righty, img):
+def measure_curvature(left_lane_line, right_lane_line, img):
     ploty = np.linspace(0, img.shape[0]-1, img.shape[0] )
 
     y_eval = np.max(ploty)
-    left_curverad = ((1 + (2*left_fit[0]*y_eval + left_fit[1])**2)**1.5) / np.absolute(2*left_fit[0])
-    right_curverad = ((1 + (2*right_fit[0]*y_eval + right_fit[1])**2)**1.5) / np.absolute(2*right_fit[0])
+    left_curverad = ((1 + (2*left_lane_line.current_fit[0]*y_eval + left_lane_line.current_fit[1])**2)**1.5) / np.absolute(2*left_lane_line.current_fit[0])
+    right_curverad = ((1 + (2*right_lane_line.current_fit[0]*y_eval + right_lane_line.current_fit[1])**2)**1.5) / np.absolute(2*right_lane_line.current_fit[0])
     print(left_curverad, right_curverad)
     ym_per_pix = 30/720 # meters per pixel in y dimension
     xm_per_pix = 3.7/700 # meters per pixel in x dimension
 
     # Fit new polynomials to x,y in world space
-    print(len(ploty), len(leftx))
-    left_fit_cr = np.polyfit(lefty*ym_per_pix, leftx*xm_per_pix, 2)
-    right_fit_cr = np.polyfit(righty*ym_per_pix, rightx*xm_per_pix, 2)
+    #print(len(ploty), len(leftx))
+    left_fit_cr = np.polyfit(left_lane_line.ally*ym_per_pix, left_lane_line.allx*xm_per_pix, 2)
+    right_fit_cr = np.polyfit(right_lane_line.ally*ym_per_pix, right_lane_line.allx*xm_per_pix, 2)
     # Calculate the new radii of curvature
     left_curverad = ((1 + (2*left_fit_cr[0]*y_eval*ym_per_pix + left_fit_cr[1])**2)**1.5) / np.absolute(2*left_fit_cr[0])
     right_curverad = ((1 + (2*right_fit_cr[0]*y_eval*ym_per_pix + right_fit_cr[1])**2)**1.5) / np.absolute(2*right_fit_cr[0])
     # Now our radius of curvature is in meters
     print(left_curverad, 'm', right_curverad, 'm')
+    print("Average curve", (left_curverad + right_curverad) / 2)
+    return (left_curverad + right_curverad) / 2
 
-def thresholded_all(img, s_threshold=(20, 255), l_threshold=(50, 255)):
+def thresholded_all(img, s_threshold=(20, 255), l_threshold=(65, 255)):
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
     saturation = hls[:,:,2]
@@ -183,8 +192,8 @@ def thresholded_all(img, s_threshold=(20, 255), l_threshold=(50, 255)):
 
     binary_output = np.zeros_like(saturation)
     binary_output[
-            (saturation > s_threshold[0]) & (saturation <= s_threshold[1]) &
             (lightness > l_threshold[0]) & (lightness <= l_threshold[1]) &
+            (saturation > s_threshold[0]) & (saturation <= s_threshold[1]) &
             (scaled_sobel > sobel_threshold[0]) & (scaled_sobel <= sobel_threshold[1])] = 255
 
     return binary_output
@@ -398,18 +407,28 @@ def find_lane_lines(img, left_lane_line, right_lane_line):
         left_fit = np.polyfit(lefty, leftx, 2)
         right_fit = np.polyfit(righty, rightx, 2)
 
-        """
         print(left_fit[1])
         print(right_fit[1])
 
         print(float(left_fit[1]) * float(right_fit[1]))
 
-        if float(left_fit[1]) * float(right_fit[1]) > 0:
-            print("Discarding!")
-            left_lane_line.detected = False
-            right_lane_line.detected = False
-            return left_lane_line, right_lane_line
-        """
+        if len(left_lane_line.fits) > 0:
+            lanes = [left_lane_line, right_lane_line]
+            fits = [left_fit, right_fit]
+            for i in range(len(lanes)):
+                lane = lanes[i]
+                fit = fits[i]
+                diff = [abs(fit[0] - lane.best_fit[0]),
+                        abs(fit[1] - lane.best_fit[1]),
+                        abs(fit[2] - lane.best_fit[2])]
+                # diff[0] > 0.005 or diff[1] > 1.0 or diff[2] > 200. or 
+                if abs(left_fit[2] - right_fit[2]) < 250 or abs(left_fit[2] - right_fit[2]) > 550:
+                    print("Discarding!")
+                    print("diff0", diff[0], "diff1", diff[1], "diff2", diff[2])
+                    print(abs(left_fit[2] - right_fit[2]))
+                    left_lane_line.detected = False
+                    right_lane_line.detected = False
+                    return left_lane_line, right_lane_line
 
         ploty = np.linspace(0, img.shape[0]-1, img.shape[0] )
         left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
@@ -473,13 +492,13 @@ def topdown_crop(img):
     mask_top = img.shape[0] / 2 - 50
     vertices_left = np.array([[
         (0,0),
-        (img.shape[1] / 3, 0),
-        (img.shape[1] / 3, img.shape[0]),
+        (img.shape[1] / 3.5, 0),
+        (img.shape[1] / 3.5, img.shape[0]),
         (0, img.shape[0])]], dtype=np.int32)
     vertices_right = np.array([[
         (img.shape[1],0),
-        (img.shape[1] - img.shape[1] / 4, 0),
-        (img.shape[1] - img.shape[1] / 4, img.shape[0]),
+        (img.shape[1] - img.shape[1] / 3.5, 0),
+        (img.shape[1] - img.shape[1] / 3.5, img.shape[0]),
         (img.shape[1], img.shape[0])]], dtype=np.int32)
     cv2.fillPoly(output, vertices_left, 0)
     cv2.fillPoly(output, vertices_right, 0)
@@ -522,7 +541,7 @@ cv2.destroyAllWindows()
 """
 
 white_output = 'output.mp4'
-clip1 = VideoFileClip("project_video.mp4").subclip(25, 30)
+clip1 = VideoFileClip("project_video.mp4") #.subclip(15, 28)
 white_clip = clip1.fl_image(process_frame)
 white_clip.write_videofile(white_output, audio=False)
 
