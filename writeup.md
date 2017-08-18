@@ -13,17 +13,17 @@ The goals / steps of this project are the following:
 
 [//]: # (Image References)
 
-[chessboard_before]: ./examples/chessboard_calibration_image.jpg "Uncalibrated chessboard"
-[chessboard_after]: ./examples/distortion_corrected_chessboard.jpg "Calibrated chessboard"
-[road_calibration_before]: ./examples/road_uncalibrated.jpg "Uncalibrated road"
-[road_calibration_after]: ./examples/road_calibrated.jpg "Calibrated road"
-[filter_l]: ./examples/filter_l.jpg "HSL Lightness filter"
-[filter_s]: ./examples/filter_s.jpg "HSL Saturation filter"
-[filter_sobel]: ./examples/filter_sobel.jpg "Sobel X filter"
-[filter_combined]: ./examples/filter_combined.jpg "Combined filters"
-[warped_image]: ./examples/warped_image.jpg "Warped road image"
-[result]: ./examples/result.jpg "Plotted result image"
-[polyfit]: ./examples/polyfit.jpg "Plotted result image in topdown view"
+[chessboard_before]: ./output_images/chessboard_calibration_image.jpg "Uncalibrated chessboard"
+[chessboard_after]: ./output_images/distortion_corrected_chessboard.jpg "Calibrated chessboard"
+[road_calibration_before]: ./output_images/road_uncalibrated.jpg "Uncalibrated road"
+[road_calibration_after]: ./output_images/road_calibrated.jpg "Calibrated road"
+[filter_l]: ./output_images/filter_l.jpg "HSL Lightness filter"
+[filter_s]: ./output_images/filter_s.jpg "HSL Saturation filter"
+[filter_sobel]: ./output_images/filter_sobel.jpg "Sobel X filter"
+[filter_combined]: ./output_images/filter_combined.jpg "Combined filters"
+[warped_image]: ./output_images/warped_image.jpg "Warped road image"
+[result]: ./output_images/result.jpg "Plotted result image"
+[polyfit]: ./output_images/polyfit.jpg "Plotted result image in topdown view"
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/571/view) Points
 
@@ -57,6 +57,8 @@ The shape is warped closer to a flat 2d representation of a chessboard:
 
 ![Chessboard before after][chessboard_after]
 
+This is done by the `calibrate_camera` method in `project.py`, which uses OpenCV's `findChessboardCorners` and `calibrateCamera` method to output distortion-correct information. This information is then applied to an image using the `cv2.undistort` method.
+
 Here's the same process applied to a road image, using the calibration data obtained from the above transformation.
 
 ![Road before][road_calibration_before]
@@ -88,6 +90,12 @@ My project used a combination of the following filters:
 * HLS Lightness threshold `65 < L <= 255`
 * Sobel X threshold `2 < sobelx <= 255`
 * Cropping out 28% of the image from the left and right sides to reduce noise from other lanes
+
+The filter code can be found in `project.py#thresholded_all`. This function takes an image and applies the abovementioned transforms to generate a binary output where white represents a pixel that passed thresholding and black everything else.
+
+These filters were chosen because saturation was not sufficient for eliminating false lines from barriers or shadows. Lightness thresholding is especially helpful for eliminating dark lines from the accepted pixels.
+
+The results of each filter can be seen here:
 
 Saturation filter
 
@@ -142,7 +150,7 @@ This is implemented at the end of `project.py#process_frame` by taking the rende
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
 
-Here's a [link to my video result](./project_video_output.mp4)
+Here's a [link to my video result](./output_images/project_video_output.mp4)
 
 ---
 
@@ -154,7 +162,7 @@ My project mostly followed the steps outlined in the module. However, I struggle
 
 Because of the low saturation threshold used, lightness and sobel fitlers are utilized to filter out potential noise. Lightness thresholding was especially helpful in rejecting shadows as false lane lines. To reduce jitter, the lane line coefficients were averaged over 6 frames.
 
-However, adding all the above filters created an immense amount of hyperparameters to tune for the project, and it was easy to accidentally overfit the parameters to work on a set of frames but not generally over the entire video.
+However, adding all the above filters created an immense amount of hyperparameters to tune for the project, and it was easy to accidentally overfit the parameters to work on a set of frames but not generally over the entire video. Likewise, it is clear from the challenge video (output found in `challenge_video_output.mp4`) that the pipeline is unable to generalize to other videos even with the same camera.
 
 The project is likely to fail on any video with substantially different lighting, different lane types such as [Botts' dots](https://en.wikipedia.org/wiki/Botts%27_dots), or three-dimensional warps of the road lanes, such as with hills through curves.
 

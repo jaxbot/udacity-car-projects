@@ -341,7 +341,7 @@ def topdown_crop(img):
     return output
 
 def draw_text(img, text, pos):
-    cv2.putText(result, text, pos, cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
+    cv2.putText(img, text, pos, cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
 
 class Line():
     def __init__(self):
