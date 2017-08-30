@@ -13,8 +13,8 @@ from shutil import copyfile
 import imutils
 from imutils import contours
 from skimage import measure
+import time
 
-    
 ystart = 400
 ystop = 656
 scale = 1.5
@@ -59,10 +59,6 @@ def cnn_classify(img, labels):
             continue
 
         padding = 1.5
-        if endy * padding <= img.shape[0]:
-            endy = int(endy * padding)
-        else:
-            endy = img.shape[0]
         if endx * padding <= img.shape[1]:
             endx = int(endx * padding)
         else:
@@ -99,9 +95,12 @@ def cnn_classify(img, labels):
             #cv2.imshow('image',img_window)
             #cv2.waitKey(0)
 
+            start = time.time()
             image_data = cv2.imencode('.jpg', img_window)[1].tostring()
             softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
             predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
+            end = time.time()
+            print("Classifying window took ", end - start)
 
             top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
 
@@ -115,7 +114,7 @@ def cnn_classify(img, labels):
 
             if results['vehicles'] > highest_result:
                 highest_result = results['vehicles']
-                offset = width / (endx - startx)
+                offset = (endx - startx) / width
                 #cv2.imshow('image',img_section)
                 #cv2.waitKey(0)
                 best_box = ((startx + int(x_shift * offset), starty), (startx + int((x_shift + 299) * offset), bbox[1][1]))
@@ -151,8 +150,7 @@ def process_frame(img):
 
     heat = np.zeros_like(img[:,:,0]).astype(np.float)
     heat = add_heat(heat, boxes)
-    heatmaps.append(heat)
-    #heat = average_heatmaps(heatmaps)
+    heat = apply_threshold(heat, 1)
 
     if len(tracked_vehicles) < 1 or framecount > 15:
         last_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -165,6 +163,7 @@ def process_frame(img):
 
         final_boxes = cnn_classify(img, labels)
 
+        """
         for box in final_boxes:
             vehicle = Vehicle()
             vehicle.bbox = box
@@ -205,7 +204,6 @@ def process_frame(img):
                     tracked_vehicles = []
                 tracked_vehicles.append(vehicle)
                 img = draw_optical_flow_lines(img, flow)
-        """
         draw_img = draw_labeled_bboxes(np.copy(img), tracked_vehicles)
     else:
         for vehicle in tracked_vehicles:
@@ -234,6 +232,6 @@ class Vehicle:
     flow = []
 
 output_file = 'output_dl_no_svm.mp4'
-clip = VideoFileClip("project_video.mp4").subclip(9, 12)
+clip = VideoFileClip("project_video.mp4") #.subclip(9, 12)
 processed_clip = clip.fl_image(process_frame)
 processed_clip.write_videofile(output_file, audio=False)
