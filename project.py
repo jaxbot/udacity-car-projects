@@ -47,132 +47,83 @@ def cnn_classify(img, labels):
         bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
         # Draw the box on the image
 
-        cropped_img = img[bbox[0][1]:bbox[1][1], bbox[0][0]:bbox[1][0]]
+        startx = bbox[0][0]
+        endx = bbox[1][0]
+        starty = bbox[0][1]
+        endy = bbox[1][1]
 
-        height = cropped_img.shape[0]
-        width = cropped_img.shape[1]
-
-        #cv2.imshow('image',cropped_img)
-        #cv2.waitKey(0)
+        height = endy - starty
+        width = endx - startx
 
         if width < 64 or height < 64 or width > 800 or height > 600:
             continue
 
-        hls = cv2.cvtColor(cropped_img, cv2.COLOR_RGB2HLS)
-        gray = cv2.cvtColor(cropped_img, cv2.COLOR_RGB2GRAY)
-        sobelx = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=9)
-        abs_sobelx = np.absolute(sobelx)
-        scaled_sobel = np.uint8(255*abs_sobelx/np.max(abs_sobelx))
-        blurred = cv2.GaussianBlur(scaled_sobel, (11, 11), 0)
-        thresh = cv2.threshold(blurred, 40, 255, cv2.THRESH_BINARY)[1]
-        cv2.imshow('image',thresh)
-        cv2.waitKey(0)
-        thresh = cv2.erode(thresh, None, iterations=2)
-        thresh = cv2.dilate(thresh, None, iterations=4)
-        clabels = measure.label(thresh, neighbors=8, background=0)
-        mask = np.zeros(thresh.shape, dtype="uint8")
-         
-        # loop over the unique components
-        for lbl in np.unique(clabels):
-                # if this is the background label, ignore it
-                if lbl == 0:
-                        continue
-         
-                # otherwise, construct the label mask and count the
-                # number of pixels 
-                labelMask = np.zeros(thresh.shape, dtype="uint8")
-                labelMask[clabels == lbl] = 255
-                numPixels = cv2.countNonZero(labelMask)
-         
-                # if the number of pixels in the component is sufficiently
-                # large, then add it to our mask of "large blobs"
-                if numPixels > 20:
-                        mask = cv2.add(mask, labelMask)
+        padding = 1.5
+        if endy * padding <= img.shape[0]:
+            endy = int(endy * padding)
+        else:
+            endy = img.shape[0]
+        if endx * padding <= img.shape[1]:
+            endx = int(endx * padding)
+        else:
+            endx = img.shape[1]
 
-        #cv2.imshow('image',mask)
+        img_section = img[starty:endy, startx:endx]
+        #cv2.imshow('image',img_section)
         #cv2.waitKey(0)
-        # find the contours in the mask, then sort them from left to
-        # right
-        im2, cnts, hierarchy = cv2.findContours(mask.copy(), cv2.RETR_EXTERNAL,
-                cv2.CHAIN_APPROX_SIMPLE)
-         
-        cv2.imshow('image',im2)
-        cv2.waitKey(0)
-        split_boxes = []
-        # loop over the contours
-        for (i, c) in enumerate(cnts):
-                # draw the bright spot on the image
 
-                (x, y, w, h) = cv2.boundingRect(c)
-                if w > 64 and h > 64 and w < 600 and h < 600:
-                    split_boxes.append(((x, y), (x + w, y + h)))
-                #print(x, y, w, h)
-                #print("drawing!")
-                #cv2.rectangle(cropped_img, (x, y), (x + w, y + h), (0,0,255), 6)
-                #cv2.putText(cropped_img, "#{}".format(i + 1), (x, y - 15),
-                #        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
+        width = img_section.shape[1]
+        height = img_section.shape[0]
 
-        for split in split_boxes:
-            starty = split[0][1]
-            endy = split[1][1]
-            startx = split[0][0]
-            endx = split[1][0]
+        if width > height:
+            width = width / height * 299
+            height = 299
+        else:
+            height = height / width * 299
+            width = 299
 
-            padding = 1.5
-            if endy * padding <= cropped_img.shape[0]:
-                endy = int(endy * padding)
-            else:
-                endy = cropped_img.shape[0]
-            if endx * padding <= cropped_img.shape[1]:
-                endx = int(endx * padding)
-            else:
-                endx = cropped_img.shape[1]
+        dimensions = (int(width), int(height))
+        img_section = cv2.resize(img_section, dimensions, interpolation = cv2.INTER_AREA)
 
-            img_section = cropped_img[starty:endy, startx:endx]
+        highest_result = 0
+        best_box = None
+        x_shifts = []
 
-            width = img_section.shape[1]
-            height = img_section.shape[0]
+        for x_shift in range(0, int(width - 299), 64):
+            x_shifts.append(x_shift)
+        x_shifts.append(int(width - 299))
 
-            if width > height:
-                width = width / height * 299
-                height = 299
-            else:
-                height = height / width * 299
-                width = 299
+        for x_shift in x_shifts:
+            img_window = img_section[0:299, x_shift:299 + x_shift]
 
-            dimensions = (int(width), int(height))
-            img_section = cv2.resize(img_section, dimensions, interpolation = cv2.INTER_AREA)
+            #cv2.imshow('image',img_window)
+            #cv2.waitKey(0)
 
-            highest_result = 0
-            best_box = None
-            for x_shift in range(0, int(width - 299) + 1, 64):
-                img_window = img_section[0:299, x_shift:299 + x_shift]
+            image_data = cv2.imencode('.jpg', img_window)[1].tostring()
+            softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
+            predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
 
-                cv2.imshow('image',img_window)
-                cv2.waitKey(0)
+            top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
 
-                image_data = cv2.imencode('.jpg', img_window)[1].tostring()
-                softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
-                predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
+            results = {}
+            for node_id in top_k:
+                human_string = label_lines[node_id]
+                score = predictions[0][node_id]
 
-                top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
+                print('%s (score = %.5f' % (human_string, score))
+                results[human_string] = score
 
-                results = {}
-                for node_id in top_k:
-                    human_string = label_lines[node_id]
-                    score = predictions[0][node_id]
+            if results['vehicles'] > highest_result:
+                highest_result = results['vehicles']
+                offset = width / (endx - startx)
+                #cv2.imshow('image',img_section)
+                #cv2.waitKey(0)
+                best_box = ((startx + int(x_shift * offset), starty), (startx + int((x_shift + 299) * offset), bbox[1][1]))
+        if highest_result > 0.8:
+            bboxes.append(best_box)
 
-                    print('%s (score = %.5f' % (human_string, score))
-                    results[human_string] = score
-
-                if results['vehicles'] > highest_result:
-                    highest_result = results['vehicles']
-                    offset = (endx - startx) / width
-                    #cv2.imshow('image',img_section)
-                    #cv2.waitKey(0)
-                    best_box = ((bbox[0][0] + startx + int(x_shift * offset), bbox[0][1] + starty), (bbox[0][0] + startx + int((x_shift + 299) * offset), bbox[0][1] + endy))
-            if highest_result > 0.8:
-                bboxes.append(best_box)
+    print("Roudn complete!")
+    print(bboxes)
     return bboxes
 
 
