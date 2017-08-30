@@ -52,8 +52,8 @@ def cnn_classify(img, labels):
         height = cropped_img.shape[0]
         width = cropped_img.shape[1]
 
-        cv2.imshow('image',cropped_img)
-        cv2.waitKey(0)
+        #cv2.imshow('image',cropped_img)
+        #cv2.waitKey(0)
 
         if width < 64 or height < 64 or width > 800 or height > 600:
             continue
@@ -64,7 +64,9 @@ def cnn_classify(img, labels):
         abs_sobelx = np.absolute(sobelx)
         scaled_sobel = np.uint8(255*abs_sobelx/np.max(abs_sobelx))
         blurred = cv2.GaussianBlur(scaled_sobel, (11, 11), 0)
-        thresh = cv2.threshold(blurred, 10, 255, cv2.THRESH_BINARY)[1]
+        thresh = cv2.threshold(blurred, 40, 255, cv2.THRESH_BINARY)[1]
+        cv2.imshow('image',thresh)
+        cv2.waitKey(0)
         thresh = cv2.erode(thresh, None, iterations=2)
         thresh = cv2.dilate(thresh, None, iterations=4)
         clabels = measure.label(thresh, neighbors=8, background=0)
@@ -84,7 +86,7 @@ def cnn_classify(img, labels):
          
                 # if the number of pixels in the component is sufficiently
                 # large, then add it to our mask of "large blobs"
-                if numPixels > 50:
+                if numPixels > 20:
                         mask = cv2.add(mask, labelMask)
 
         #cv2.imshow('image',mask)
@@ -102,7 +104,7 @@ def cnn_classify(img, labels):
                 # draw the bright spot on the image
 
                 (x, y, w, h) = cv2.boundingRect(c)
-                if w > 64 and h > 64:
+                if w > 64 and h > 64 and w < 600 and h < 600:
                     split_boxes.append(((x, y), (x + w, y + h)))
                 #print(x, y, w, h)
                 #print("drawing!")
@@ -111,7 +113,22 @@ def cnn_classify(img, labels):
                 #        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 2)
 
         for split in split_boxes:
-            img_section = cropped_img[split[0][1]:split[1][1], split[0][0]:split[1][0]]
+            starty = split[0][1]
+            endy = split[1][1]
+            startx = split[0][0]
+            endx = split[1][0]
+
+            padding = 1.5
+            if endy * padding <= cropped_img.shape[0]:
+                endy = int(endy * padding)
+            else:
+                endy = cropped_img.shape[0]
+            if endx * padding <= cropped_img.shape[1]:
+                endx = int(endx * padding)
+            else:
+                endx = cropped_img.shape[1]
+
+            img_section = cropped_img[starty:endy, startx:endx]
 
             width = img_section.shape[1]
             height = img_section.shape[0]
@@ -125,39 +142,37 @@ def cnn_classify(img, labels):
 
             dimensions = (int(width), int(height))
             img_section = cv2.resize(img_section, dimensions, interpolation = cv2.INTER_AREA)
-            startx = int(width / 2 - 299 / 2)
-            if startx < 0:
-                startx = 0
-            starty = int(height / 2 - 299 / 2)
-            if starty < 0:
-                starty = 0
-            #img_section = img_section[starty:starty + 299, startx:startx + 299]
 
-            #cv2.imshow('image',thresh)
-            #cv2.waitKey(0)
+            highest_result = 0
+            best_box = None
+            for x_shift in range(0, int(width - 299) + 1, 64):
+                img_window = img_section[0:299, x_shift:299 + x_shift]
 
-            cv2.imshow('image',img_section)
-            cv2.waitKey(0)
+                cv2.imshow('image',img_window)
+                cv2.waitKey(0)
 
+                image_data = cv2.imencode('.jpg', img_window)[1].tostring()
+                softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
+                predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
 
-            image_data = cv2.imencode('.jpg', img_section)[1].tostring()
-            softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
-            predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
+                top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
 
-            top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
+                results = {}
+                for node_id in top_k:
+                    human_string = label_lines[node_id]
+                    score = predictions[0][node_id]
 
-            results = {}
-            for node_id in top_k:
-                human_string = label_lines[node_id]
-                score = predictions[0][node_id]
+                    print('%s (score = %.5f' % (human_string, score))
+                    results[human_string] = score
 
-                print('%s (score = %.5f' % (human_string, score))
-                results[human_string] = score
-
-            if results['vehicles'] > 0.8:
-                #cv2.imshow('image',img_section)
-                #cv2.waitKey(0)
-                bboxes.append(((bbox[0][0] + split[0][0], bbox[0][1] + split[0][1]), (bbox[0][0] + split[1][0], bbox[0][1] + split[1][1])))
+                if results['vehicles'] > highest_result:
+                    highest_result = results['vehicles']
+                    offset = (endx - startx) / width
+                    #cv2.imshow('image',img_section)
+                    #cv2.waitKey(0)
+                    best_box = ((bbox[0][0] + startx + int(x_shift * offset), bbox[0][1] + starty), (bbox[0][0] + startx + int((x_shift + 299) * offset), bbox[0][1] + endy))
+            if highest_result > 0.8:
+                bboxes.append(best_box)
     return bboxes
 
 
@@ -186,7 +201,7 @@ def process_frame(img):
     heat = np.zeros_like(img[:,:,0]).astype(np.float)
     heat = add_heat(heat, boxes)
     heatmaps.append(heat)
-    heat = average_heatmaps(heatmaps)
+    #heat = average_heatmaps(heatmaps)
 
     if len(tracked_vehicles) < 1 or framecount > 15:
         last_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -199,6 +214,20 @@ def process_frame(img):
 
         final_boxes = cnn_classify(img, labels)
 
+        for box in final_boxes:
+            vehicle = Vehicle()
+            vehicle.bbox = box
+            flow = get_flow_within_box(flow_lines, box)
+            vehicle.flow = flow
+
+            print("Flow!", flow)
+            if framecount > 15:
+                framecount = 0
+                tracked_vehicles = []
+            tracked_vehicles.append(vehicle)
+            img = draw_optical_flow_lines(img, flow)
+
+        """
         if len(final_boxes) > 0:
             heat = np.zeros_like(img[:,:,0]).astype(np.float)
             heat = add_heat(heat, final_boxes)
@@ -225,6 +254,7 @@ def process_frame(img):
                     tracked_vehicles = []
                 tracked_vehicles.append(vehicle)
                 img = draw_optical_flow_lines(img, flow)
+        """
         draw_img = draw_labeled_bboxes(np.copy(img), tracked_vehicles)
     else:
         for vehicle in tracked_vehicles:
@@ -253,6 +283,6 @@ class Vehicle:
     flow = []
 
 output_file = 'output_dl_no_svm.mp4'
-clip = VideoFileClip("project_video.mp4").subclip(9, 15)
+clip = VideoFileClip("project_video.mp4").subclip(9, 12)
 processed_clip = clip.fl_image(process_frame)
 processed_clip.write_videofile(output_file, audio=False)
