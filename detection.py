@@ -1,3 +1,4 @@
+import time
 import numpy as np
 import cv2
 from skimage.feature import hog
@@ -8,6 +9,22 @@ from moviepy.editor import VideoFileClip
 import tensorflow as tf, sys
 from scipy.ndimage.measurements import label
 
+ystart = 400
+ystop = 656
+scale = 1.5
+spatial_size = (8, 8)
+hist_bins = 16
+
+heatmaps = []
+    
+classifier_definition = pickle.load(open("model.p", "rb"))
+
+svc = classifier_definition["classifier"]
+X_scaler = classifier_definition["x_scaler"]
+orient = classifier_definition["orientations"]
+pix_per_cell = classifier_definition["pixels_per_cell"]
+cell_per_block = classifier_definition["cell_per_block"]
+
 label_lines = [line.rstrip() for line in tf.gfile.GFile("output_labels.txt")]
 
 with tf.gfile.FastGFile("output_graph.pb", 'rb') as f:
@@ -15,25 +32,28 @@ with tf.gfile.FastGFile("output_graph.pb", 'rb') as f:
     graph_def.ParseFromString(f.read())
     _ = tf.import_graph_def(graph_def, name='')
 
+sess = tf.Session()
+
 def cnn_classify_subimage(subimg):
-    with tf.Session() as sess:
-        image_data = cv2.imencode('.jpg', subimg)[1].tostring()
-        softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
-        predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
+    global sess
+    start = time.time()
+    image_data = cv2.imencode('.jpg', subimg)[1].tostring()
+    softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
+    predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
+    end = time.time()
+    print("Classifying window took ", end - start)
 
-        top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
+    top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
 
-        results = {}
-        for node_id in top_k:
-            human_string = label_lines[node_id]
-            score = predictions[0][node_id]
+    results = {}
+    for node_id in top_k:
+        human_string = label_lines[node_id]
+        score = predictions[0][node_id]
 
-            print('%s (score = %.5f' % (human_string, score))
-            results[human_string] = score
+        print('%s (score = %.5f' % (human_string, score))
+        results[human_string] = score
 
-        if results['vehicles'] > 0.8:
-            return 1
-    return 0
+    return results['vehicles']
 
 def get_hog_features(img, orient, pix_per_cell, cell_per_block, 
                         vis=False, feature_vec=True):
@@ -132,6 +152,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
             # Scale features and make a prediction
             #test_features = X_scaler.transform(np.hstack((spatial_features, hist_features, hog_features)).reshape(1, -1))    
             #test_features = X_scaler.transform(np.hstack((shape_feat, hist_feat)).reshape(1, -1))    
+
             test_prediction = svc.predict(hog_features)
             
             if test_prediction == 1:
@@ -148,12 +169,6 @@ def add_heat(heatmap, bbox_list):
         # Add += 1 for all pixels inside each bbox
         # Assuming each "box" takes the form ((x1, y1), (x2, y2))
         heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
-
-    # normalize
-    max_box = np.max(heatmap)
-
-    for i in range(len(heatmap)):
-        heatmap[i] = heatmap[i] / max_box
 
     # Return updated heatmap
     return heatmap# Iterate through list of bboxes
@@ -173,7 +188,7 @@ def draw_labeled_bboxes(img, vehicles):
 
 def average_heatmaps(heatmaps):
     print(len(heatmaps))
-    if len(heatmaps) > 10:
+    if len(heatmaps) > 5:
         heatmaps.pop(0)
 
     average_heatmap = heatmaps[0]
@@ -250,3 +265,158 @@ def calculate_box_movement(flow_lines):
     if count > 0:
         return (int((avg_x / count)), int((avg_y / count)))
     return (0, 0)
+
+def _bbox_collision(bbox1, bbox2):
+    #return bbox1[0][0] >= bbox2[0][0] and bbox1[0][0] <= bbox2[1][0] and bbox1[0][1] >= bbox2[0][1] and bbox1[0][1] <= bbox2[1][1]
+    return bbox1[0][0] < bbox2[1][0] and bbox1[1][0] > bbox2[0][0] and bbox1[0][1] < bbox2[1][1] and bbox1[1][1] > bbox2[0][1]
+
+def bbox_collision(bbox1, bbox2):
+    return _bbox_collision(bbox1, bbox2) or _bbox_collision(bbox2, bbox1)
+
+def vehicle_intersects(tracked_vehicles, vehicle):
+    for existing_vehicle in tracked_vehicles:
+        if bbox_collision(vehicle.bbox, existing_vehicle.bbox):
+            return True
+    return False
+
+def find_new_vehicles(img, tracked_vehicles, flow_lines):
+    boxes = find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+    heat = np.zeros_like(img[:,:,0]).astype(np.float)
+    heat = add_heat(heat, boxes)
+
+    # Visualize the heatmap when displaying    
+    heatmap = np.clip(heat, 0, 255)
+    # Find final boxes from heatmap using label function
+    labels = label(heatmap)
+    final_boxes = cnn_classify(img, labels)
+
+    for box in final_boxes:
+        vehicle = Vehicle()
+        vehicle.bbox = box
+        flow = get_flow_within_box(flow_lines, box)
+        vehicle.flow = flow
+
+        if not vehicle_intersects(tracked_vehicles, vehicle):
+            tracked_vehicles.append(vehicle)
+
+    """
+    heat = np.zeros_like(img[:,:,0]).astype(np.float)
+    heat = add_heat(heat, final_boxes)
+    heatmap = np.clip(heat, 0, 255)
+    # Find final boxes from heatmap using label function
+    labels = label(heatmap)
+    for car_number in range(1, labels[1]+1):
+        # Find pixels with each car_number label value
+        nonzero = (labels[0] == car_number).nonzero()
+        # Identify x and y values of those pixels
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+        # Define a bounding box based on min/max x and y
+        box = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+
+        vehicle = Vehicle()
+        vehicle.bbox = box
+        flow = get_flow_within_box(flow_lines, box)
+        vehicle.flow = flow
+
+        if not vehicle_intersects(tracked_vehicles, vehicle):
+            tracked_vehicles.append(vehicle)
+    """
+
+def cnn_classify(img, labels):
+    bboxes = []
+
+    boxes_to_test = []
+    for car_number in range(1, labels[1]+1):
+        # Find pixels with each car_number label value
+        nonzero = (labels[0] == car_number).nonzero()
+        # Identify x and y values of those pixels
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+        # Define a bounding box based on min/max x and y
+        bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+        # Draw the box on the image
+        bbox_half = ((bbox[0][0], bbox[0][1]), (bbox[1][0], bbox[0][1] + int((bbox[1][1] - bbox[0][1]) / 2)))
+
+        boxes_to_test.append(bbox)
+        boxes_to_test.append(bbox_half)
+
+    for bbox in boxes_to_test:
+        startx = bbox[0][0]
+        endx = bbox[1][0]
+        starty = bbox[0][1]
+        endy = bbox[1][1]
+
+        height = endy - starty
+        width = endx - startx
+
+        if width < 64 or height < 64 or width > 800 or height > 600:
+            continue
+
+        padding = 1.5
+        if endx * padding <= img.shape[1]:
+            endx = int(endx * padding)
+        else:
+            endx = img.shape[1]
+
+        img_section = img[starty:endy, startx:endx]
+        overall_results = cnn_classify_subimage(img_section)
+        if overall_results < 0.1:
+            print("Overall results:", overall_results)
+            continue
+        #cv2.imshow('image',img_section)
+        #cv2.waitKey(0)
+
+        width = img_section.shape[1]
+        height = img_section.shape[0]
+
+        if width > height:
+            width = width / height * 299
+            height = 299
+        else:
+            height = height / width * 299
+            width = 299
+
+        dimensions = (int(width), int(height))
+        img_section = cv2.resize(img_section, dimensions, interpolation = cv2.INTER_AREA)
+
+        vehicles = []
+        x_shifts = []
+
+        for x_shift in range(0, int(width - 299), 64):
+            x_shifts.append(x_shift)
+        x_shifts.append(int(width - 299))
+
+        for x_shift in x_shifts:
+            img_window = img_section[0:299, x_shift:299 + x_shift]
+
+            results = cnn_classify_subimage(img_window)
+
+            offset = (endx - startx) / width
+            bbox = ((startx + int(x_shift * offset), starty), (startx + int((x_shift + 299) * offset), bbox[1][1]))
+            found = False
+            for vehicle in vehicles:
+                if bbox_collision(vehicle.bbox, bbox):
+                    if vehicle.probability < results:
+                        vehicle.bbox = bbox
+                        vehicle.probability = results
+                        found = True
+                        break
+            if found == False and results > 0.8:
+                vehicle = Vehicle()
+                vehicle.bbox = bbox
+                vehicle.probability = results
+                vehicles.append(vehicle)
+        for vehicle in vehicles:
+            bboxes.append(vehicle.bbox)
+
+    print("Roudn complete!")
+    print(bboxes)
+    return bboxes
+
+class Vehicle:
+    bbox = []
+    flow = []
+    probability = 0
+    missing_frames = 0
+
