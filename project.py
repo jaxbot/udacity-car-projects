@@ -93,7 +93,7 @@ def process_frame(img):
 def draw_text(img, text, pos):
     cv2.putText(img, text, pos, cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
 
-output_file = 'output_dl_no_svm.mp4'
-clip = VideoFileClip("project_video.mp4") #.subclip(35, 44)
+output_file = 'output_dl_orlando3.mp4'
+clip = VideoFileClip("00280001.mp4")#.subclip(20, 240)
 processed_clip = clip.fl_image(process_frame)
 processed_clip.write_videofile(output_file, audio=False)

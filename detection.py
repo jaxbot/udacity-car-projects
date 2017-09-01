@@ -9,7 +9,7 @@ from moviepy.editor import VideoFileClip
 import tensorflow as tf, sys
 from scipy.ndimage.measurements import label
 
-ystart = 400
+ystart = 300
 ystop = 656
 scale = 1.5
 spatial_size = (8, 8)
@@ -36,24 +36,27 @@ sess = tf.Session()
 
 def cnn_classify_subimage(subimg):
     global sess
-    start = time.time()
-    image_data = cv2.imencode('.jpg', subimg)[1].tostring()
-    softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
-    predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
-    end = time.time()
-    print("Classifying window took ", end - start)
+    try:
+        start = time.time()
+        image_data = cv2.imencode('.jpg', subimg)[1].tostring()
+        softmax_tensor = sess.graph.get_tensor_by_name('final_result:0')
+        predictions = sess.run(softmax_tensor, {'DecodeJpeg/contents:0': image_data})
+        end = time.time()
+        print("Classifying window took ", end - start)
 
-    top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
+        top_k = predictions[0].argsort()[-len(predictions[0]):][::-1]
 
-    results = {}
-    for node_id in top_k:
-        human_string = label_lines[node_id]
-        score = predictions[0][node_id]
+        results = {}
+        for node_id in top_k:
+            human_string = label_lines[node_id]
+            score = predictions[0][node_id]
 
-        print('%s (score = %.5f' % (human_string, score))
-        results[human_string] = score
+            print('%s (score = %.5f' % (human_string, score))
+            results[human_string] = score
 
-    return results['vehicles']
+        return results['vehicles']
+    except:
+        return 0
 
 def get_hog_features(img, orient, pix_per_cell, cell_per_block, 
                         vis=False, feature_vec=True):
@@ -182,7 +185,7 @@ def apply_threshold(heatmap, threshold):
 def draw_labeled_bboxes(img, vehicles):
     # Iterate through all detected cars
     for vehicle in vehicles:
-        cv2.rectangle(img, vehicle.bbox[0], vehicle.bbox[1], (0,0,255), 6)
+        cv2.rectangle(img, vehicle.bbox[0], vehicle.bbox[1], vehicle.color, 3)
     # Return the image
     return img
 
@@ -278,6 +281,15 @@ def vehicle_intersects(tracked_vehicles, vehicle):
         if bbox_collision(vehicle.bbox, existing_vehicle.bbox):
             return True
     return False
+
+def vehicle_is_subbox(tracked_vehicles, vehicle):
+    for existing_vehicle in tracked_vehicles:
+        bbox_e = existing_vehicle.bbox
+        bbox_v = vehicle.bbox
+        if bbox_v[0][0] > bbox_e[0][0] and bbox_v[1][0] < bbox_e[1][0] and bbox_v[0][1] > bbox_e[0][1] and bbox_v[1][1] < bbox_e[1][1]:
+            return True, existing_vehicle
+    return False, None
+
 
 def find_new_vehicles(img, tracked_vehicles, flow_lines):
     boxes = find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
@@ -413,10 +425,28 @@ def cnn_classify(img, labels):
     print(bboxes)
     return bboxes
 
+COLORS = [(66, 134, 244),
+        (66, 80, 244),
+        (200, 66, 244),
+        (244, 66, 104),
+        (128, 244, 66),
+        (244, 155, 66),
+        (173, 244, 66),
+        (66, 244, 167)]
+
+current_color = 0
+
 class Vehicle:
     bbox = []
     flow = []
     probability = 0
     missing_frames = 0
     color = (0, 0, 0)
+
+    def __init__(self):
+        global current_color
+        self.color = COLORS[current_color]
+        current_color += 1
+        if current_color >= len(COLORS):
+            current_color = 0
 
