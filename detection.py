@@ -101,7 +101,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
     img = img.astype(np.float32)/255
     
     img_tosearch = img[ystart:ystop,:,:]
-    ctrans_tosearch = img_tosearch #convert_color(img_tosearch, conv='RGB2HLS')
+    ctrans_tosearch = cv2.cvtColor(img_tosearch, cv2.COLOR_BGR2YUV) #convert_color(img_tosearch, conv='RGB2HLS')
     if scale != 1:
         imshape = ctrans_tosearch.shape
         ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
@@ -141,7 +141,7 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, ce
             ytop = ypos*pix_per_cell
 
             # Extract the image patch
-            subimg = cv2.resize(ctrans_tosearch[ytop:ytop+window, xleft:xleft+window], (64,64))
+            #subimg = cv2.resize(ctrans_tosearch[ytop:ytop+window, xleft:xleft+window], (64,64))
 
             #test_prediction = cnn_classify_subimage(subimg)
 
@@ -281,6 +281,8 @@ def vehicle_intersects(tracked_vehicles, vehicle):
 
 def find_new_vehicles(img, tracked_vehicles, flow_lines):
     boxes = find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins)
+
+
     heat = np.zeros_like(img[:,:,0]).astype(np.float)
     heat = add_heat(heat, boxes)
 
@@ -335,11 +337,8 @@ def cnn_classify(img, labels):
         nonzerox = np.array(nonzero[1])
         # Define a bounding box based on min/max x and y
         bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
-        # Draw the box on the image
-        bbox_half = ((bbox[0][0], bbox[0][1]), (bbox[1][0], bbox[0][1] + int((bbox[1][1] - bbox[0][1]) / 2)))
 
         boxes_to_test.append(bbox)
-        boxes_to_test.append(bbox_half)
 
     for bbox in boxes_to_test:
         startx = bbox[0][0]
@@ -353,7 +352,7 @@ def cnn_classify(img, labels):
         if width < 64 or height < 64 or width > 800 or height > 600:
             continue
 
-        padding = 1.5
+        padding = 1
         if endx * padding <= img.shape[1]:
             endx = int(endx * padding)
         else:
@@ -419,4 +418,5 @@ class Vehicle:
     flow = []
     probability = 0
     missing_frames = 0
+    color = (0, 0, 0)
 

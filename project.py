@@ -38,6 +38,8 @@ def process_frame(img):
 
     framecount += 1
     debounce += 1
+    #tracked_vehicles = []
+    #find_new_vehicles(img, tracked_vehicles, flow_lines)
 
     if (len(tracked_vehicles) < 1 and debounce > 5) or framecount > 15:
         last_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -47,7 +49,8 @@ def process_frame(img):
         debounce = 0
 
     i = 0
-    for vehicle in tracked_vehicles[:]:
+    tracked_vehicles_copy = tracked_vehicles[:]
+    for vehicle in tracked_vehicles_copy:
         movement = calculate_box_movement(vehicle.flow)
         new_box = ((vehicle.bbox[0][0] + movement[0], vehicle.bbox[0][1] + movement[1]),
                 (vehicle.bbox[1][0] + movement[0], vehicle.bbox[1][1] + movement[1]))
