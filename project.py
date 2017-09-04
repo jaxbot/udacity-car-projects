@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.image as mpimg
 from moviepy.editor import VideoFileClip
 import matplotlib.pyplot as plt
+import glob
 
 
 VERBOSE = False
@@ -18,7 +19,7 @@ YM_PER_PIX = 30 / 720
 XM_PER_PIX = 3.7 / 700
 
 # Calibrate camera using a chessboard image and the given board size.
-def calibrate_camera(chess_img, board_size=(8,6)):
+def calibrate_camera(chess_img, board_size=(9,6)):
     grayscale = grayscale_img(chess_img)
     return_val, corners = cv2.findChessboardCorners(grayscale, board_size, None)
 
@@ -47,7 +48,8 @@ def process_frame(frame):
     img_size = (frame.shape[1], frame.shape[0])
 
     # Undistort frame with camera calibration constants
-    frame = undistort_img(frame, CAMERA_MTX, CAMERA_DIST)
+    for i in range(len(CAMERA_MTX)):
+        frame = undistort_img(frame, CAMERA_MTX[i], CAMERA_DIST[i])
 
     # Transform frame into top-down view
     road_transform_dest = np.float32([
@@ -359,14 +361,25 @@ class Line():
         self.ally = None
 
 # Calibrate camera used for input frames
-img = cv2.imread("camera_cal/calibration2.jpg")
-CAMERA_MTX, CAMERA_DIST = calibrate_camera(img)
+calibration_images = glob.glob("camera_cal/*.jpg")
+CAMERA_MTX = []
+CAMERA_DIST = []
+for imgfile in calibration_images:
+    img = cv2.imread(imgfile)
+
+    try:
+        mtx, dist = calibrate_camera(img)
+        CAMERA_DIST.append(dist)
+        CAMERA_MTX.append(mtx)
+    except AssertionError:
+        print("Failed to find corners in ", imgfile)
+        pass
 
 LEFT_LANE_LINE = Line()
 RIGHT_LANE_LINE = Line()
 
 # Run pipeline on project video
 output_file = 'output.mp4'
-clip = VideoFileClip("project_video.mp4")
+clip = VideoFileClip("project_video.mp4").subclip(0,3)
 processed_clip = clip.fl_image(process_frame)
 processed_clip.write_videofile(output_file, audio=False)
