@@ -1,6 +1,8 @@
 # Extended Kalman Filter Project Starter Code
 Self-Driving Car Engineer Nanodegree Program
 
+This code is based on [udacity/CarND-Extended-Kalman-Filter-Project](https://github.com/udacity/CarND-Extended-Kalman-Filter-Project) and the lecture material for CarND Term 2.
+
 ## Basic Build Instructions
 
 1. Clone this repo.
