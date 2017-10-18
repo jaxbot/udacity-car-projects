@@ -64,6 +64,12 @@ public:
    */
   void UpdateEKF(const Eigen::VectorXd &z);
 
+private:
+
+  /**
+   * Updates the state internally, called by Update and UpdateEKF.
+   */
+  void UpdateInternal(const Eigen::VectorXd &y);
 };
 
 #endif /* KALMAN_FILTER_H_ */

@@ -43,6 +43,10 @@ private:
   Eigen::MatrixXd R_laser_;
   Eigen::MatrixXd R_radar_;
   Eigen::MatrixXd H_laser_;
+
+  // Given constants from assignment.
+  float noise_ax = 9;
+  float noise_ay = 9;
 };
 
 #endif /* FusionEKF_H_ */

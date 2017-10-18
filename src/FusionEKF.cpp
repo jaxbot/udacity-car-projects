@@ -50,6 +50,7 @@ FusionEKF::FusionEKF() {
     0, 0, 1000, 0,
     0, 0, 0, 1000;
   ekf_.Q_ = MatrixXd(4, 4);
+
 }
 
 /**
@@ -93,16 +94,13 @@ void FusionEKF::ProcessMeasurement(const MeasurementPackage &measurement_pack) {
 
     // done initializing, no need to predict or update
     is_initialized_ = true;
+    previous_timestamp_ = measurement_pack.timestamp_;
     return;
   }
 
   /*****************************************************************************
    *  Prediction
    ****************************************************************************/
-
-  // Given constants from assignment.
-  float noise_ax = 9;
-  float noise_ay = 9;
   // Calculate delta time.
   float dt = measurement_pack.timestamp_ - previous_timestamp_;
   // Convert microseconds to seconds.
