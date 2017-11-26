@@ -131,6 +131,9 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
         this->dataAssociation(viable_landmarks, new_observations);
 
         double weight = 1.0;
+        vector<int> associated_id;
+        vector<double> sense_x;
+        vector<double> sense_y;
         for (int j = 0; j < new_observations.size(); j++) {
             LandmarkObs ob = new_observations[j];
 
@@ -144,6 +147,10 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
                 }
             }
 
+            associated_id.push_back(ob.id);
+            sense_x.push_back(ob.x);
+            sense_y.push_back(ob.y);
+
             double c = 1 / (2 * M_PI * std_landmark[0] * std_landmark[1]);
             double xv = (pow(p_x - ob.x, 2) / (2 * pow(std_landmark[0], 2)));
             double yv = (pow(p_y - ob.y, 2) / (2 * pow(std_landmark[1], 2)));
@@ -152,6 +159,8 @@ void ParticleFilter::updateWeights(double sensor_range, double std_landmark[],
 
         particles[i].weight = weight;
         this->weights.push_back(weight);
+
+        particles[i] = SetAssociations(particles[i], associated, sense_x, sense_y);
     }
 }
 
