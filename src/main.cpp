@@ -7,9 +7,9 @@
 // for convenience
 using json = nlohmann::json;
 
-const double MAX_THROTTLE = 1.0;
+const double MAX_THROTTLE = 0.8;
 const double SPEED_SCALER = 30.0;
-const bool RECKLESS = true;
+const bool RECKLESS = false;
 
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
@@ -75,7 +75,7 @@ int main()
           // or when the throttle is mostly open anyway. This is used to stress
           // test the steering PID controller.
           if (RECKLESS &&
-              throttle_value >= 0.9 || fabs(cte) < 0.8) {
+              (throttle_value >= 0.9 || fabs(cte) < 0.8)) {
             throttle_value = 1.0;
           }
 
