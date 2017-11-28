@@ -7,6 +7,10 @@
 // for convenience
 using json = nlohmann::json;
 
+const double MAX_THROTTLE = 1.0;
+const double SPEED_SCALER = 30.0;
+const bool RECKLESS = true;
+
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
@@ -32,10 +36,13 @@ int main()
 {
   uWS::Hub h;
 
-  PID pid;
-  // TODO: Initialize the pid variable.
+  // Initialize steering and throttle PID controllers.
+  PID steering_pid;
+  PID throttle_pid;
+  steering_pid.Init(0.151, 0.00001, 3.55);
+  throttle_pid.Init(0.51, 0.0, 0.2);
 
-  h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
+  h.onMessage([&steering_pid, &throttle_pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -51,19 +58,35 @@ int main()
           double speed = std::stod(j[1]["speed"].get<std::string>());
           double angle = std::stod(j[1]["steering_angle"].get<std::string>());
           double steer_value;
-          /*
-          * TODO: Calcuate steering value here, remember the steering value is
-          * [-1, 1].
-          * NOTE: Feel free to play around with the throttle and speed. Maybe use
-          * another PID controller to control the speed!
-          */
-          
+          double throttle_value;
+
+          steering_pid.UpdateError(cte);
+          steer_value = steering_pid.TotalError();
+
+          throttle_pid.UpdateError(fabs(cte));
+          // Set throttle to MAX_THROTTLE minus the error
+          // (note that TotalError is negative), scaled proportional to speed.
+          // This will incur heavy braking at high speeds and very little effect
+          // at low speeds.
+          throttle_value = MAX_THROTTLE +
+              (speed / SPEED_SCALER) * throttle_pid.TotalError();
+
+          // In reckless driving mode, force the throttle to 100% at low CTEs
+          // or when the throttle is mostly open anyway. This is used to stress
+          // test the steering PID controller.
+          if (RECKLESS &&
+              throttle_value >= 0.9 || fabs(cte) < 0.8) {
+            throttle_value = 1.0;
+          }
+
           // DEBUG
-          std::cout << "CTE: " << cte << " Steering Value: " << steer_value << std::endl;
+          std::cout << "CTE: " << cte << " Steering Value: " << steer_value <<
+            " was " << angle << "Speed: " << speed <<
+            " throttle " << throttle_value << std::endl;
 
           json msgJson;
           msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
+          msgJson["throttle"] = throttle_value;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
           std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);

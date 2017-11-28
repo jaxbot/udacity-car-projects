@@ -2,10 +2,6 @@
 
 using namespace std;
 
-/*
-* TODO: Complete the PID class.
-*/
-
 PID::PID() {}
 
 PID::~PID() {}
@@ -21,10 +17,12 @@ void PID::Init(double Kp, double Ki, double Kd) {
 }
 
 void PID::UpdateError(double cte) {
+    // Set p_error here if unset so that d_error can be initized on first frame.
     if (p_error == 0) {
         p_error = cte;
     }
 
+    // Update the error based on equation given in module.
     d_error = cte - p_error;
     p_error = cte;
 

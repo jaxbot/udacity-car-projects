@@ -27,3 +27,5 @@ In both examples, the PID throttle control can be seen. In my case, I choose to 
 I first attempted to use the twiddle method to adjust the hyperparameters P/I/D, but after implementing the twiddle algorithm, I found that tuning was difficult to do in a manner that was time effective, since errors taken over anything but the entire course was far too subject to noise.
 
 I instead resorted to manually tuning the parameters and observing the effects at high speeds. I settled on the selected parameters because they give enough countersteering (D) to keep the car stable at low speeds, but still provide aggressive enough proportional steering to keep the car on the track at high speeds.
+
+Likewise, the PID used for throttle controller was manually tuned until braking would incur properly at high CTEs.
