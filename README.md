@@ -8,6 +8,7 @@ Self-Driving Car Engineer Nanodegree Program
 ## Writeup
 
 >Student describes their model in detail. This includes the state, actuators and update equations.
+
 The model is based on the MPC described in the classroom module:
 
 Actuators: steering value (-25 deg to 25 deg), throttle (-1.0 to 1.0)
