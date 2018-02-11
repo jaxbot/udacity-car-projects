@@ -8,6 +8,7 @@
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
+#include "spline.h"
 
 using namespace std;
 
@@ -242,6 +243,38 @@ int main() {
           	vector<double> next_x_vals;
           	vector<double> next_y_vals;
 
+		double x = car_x;
+		double y = car_y;
+		double dist_inc = 0.4;
+
+		vector<double> next_x_points;
+		vector<double> next_y_points;
+		vector<double> t_points;
+		next_x_points.push_back(x);
+		next_y_points.push_back(y);
+		t_points.push_back(0);
+		for(int k = 0; k < 5; k++) {
+		  vector<double> xy = getXY(car_s + (dist_inc * (k + 1) * 10), 2, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+		  next_x_points.push_back(xy[0]);
+		  next_y_points.push_back(xy[1]);
+		  t_points.push_back((k + 1) * 10);
+
+		  x = xy[0];
+		  y = xy[1];
+		}
+
+		tk::spline spline_x;
+		tk::spline spline_y;
+		spline_x.set_points(t_points, next_x_points);
+		spline_y.set_points(t_points, next_y_points);
+
+		for(int i = 0; i < 50; i++)
+		{
+		  next_x_vals.push_back(spline_x(i));
+		  next_y_vals.push_back(spline_y(i));
+		}
+
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
           	msgJson["next_x"] = next_x_vals;
@@ -251,7 +284,6 @@ int main() {
 
           	//this_thread::sleep_for(chrono::milliseconds(1000));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-          
         }
       } else {
         // Manual driving
