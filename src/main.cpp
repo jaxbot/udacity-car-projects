@@ -35,6 +35,28 @@ string hasData(string s) {
   return "";
 }
 
+double getLaneSpeed(int lane, double car_s, vector<vector<double>> sensor_fusion) {
+  double min_s = 999999999;
+  double speed = -1;
+  for (int i = 0; i < sensor_fusion.size(); i++) {
+    float d = sensor_fusion[i][6];
+
+    if (d < (2 + 4 * lane + 2) && d > (2 + 4 * lane - 2)) {
+      double vx = sensor_fusion[i][3];
+      double vy = sensor_fusion[i][4];
+      double check_speed = sqrt(vx * vx + vy * vy);
+      double check_car_s = sensor_fusion[i][5];
+
+      if (check_car_s > car_s && check_car_s < min_s && check_car_s - car_s < 30) {
+	min_s = check_car_s;
+	speed = check_speed;
+      }
+    }
+  }
+
+  return speed * 2.24; // return in mph
+}
+
 double distance(double x1, double y1, double x2, double y2)
 {
 	return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
@@ -135,6 +157,7 @@ vector<double> getFrenet(double x, double y, double theta, const vector<double> 
 	return {frenet_s,frenet_d};
 
 }
+
 
 // Transform from Frenet s,d coordinates to Cartesian x,y
 vector<double> getXY(double s, double d, const vector<double> &maps_s, const vector<double> &maps_x, const vector<double> &maps_y)
@@ -247,7 +270,7 @@ int main() {
 
           	vector<double> ptsx;
           	vector<double> ptsy;
-		double reference_speed = 25.0;
+		double reference_speed = 49.0;
 
 		if (previous_path_x.size() < 2) {
 		  // Make a point tangent to the car.
@@ -303,6 +326,15 @@ int main() {
 		for (int i = 0; i < previous_path_x.size(); i++) {
 		  next_x_vals.push_back(previous_path_x[i]);
 		  next_y_vals.push_back(previous_path_y[i]);
+		}
+
+		// figure out a safe lane speed
+		double speed = getLaneSpeed(lane, car_s, sensor_fusion);
+		std::cout << "Lane speed: " << speed << std::endl;
+		if (speed > -1) {
+		  reference_speed = speed;
+		} else {
+		  reference_speed = 49.0;
 		}
 
 		double target_x = 30.0;
