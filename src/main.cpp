@@ -267,10 +267,13 @@ int main() {
 		double ref_x = car_x;
 		double ref_y = car_y;
 		double ref_yaw = deg2rad(car_yaw);
+		double ref_velocity = 0;
 
           	vector<double> ptsx;
           	vector<double> ptsy;
 		double reference_speed = 49.0;
+
+		double dt = 0.02;
 
 		if (previous_path_x.size() < 2) {
 		  // Make a point tangent to the car.
@@ -295,6 +298,11 @@ int main() {
 
 		  ptsy.push_back(ref_y_prev);
 		  ptsy.push_back(ref_y);
+
+		  double dx = (ref_x - ref_x_prev) / dt;
+		  double dy = (ref_y - ref_y_prev) / dt;
+
+		  ref_velocity = sqrt(dx * dx + dy * dy) * 2.24;
 		}
 
 		// Find our next anchor points we plan to pass through.
@@ -343,13 +351,27 @@ int main() {
 
 		double x_add_on = 0;
 
-		double velo_shift = 0.2;
+		double velo_shift = 0.3;
 		double current_speed = car_speed;
+
+		// If we have points in the previous path, figure out the speed at the end of the path.
+		if (previous_path_x.size() > 2) {
+		  current_speed = ref_velocity;
+		  std::cout << "Current speed: " << current_speed << " vs " << car_speed << std::endl;
+		}
+		std::cout << "Reference speed " << reference_speed << std::endl;
+
 		if (fabs(current_speed - reference_speed) < velo_shift) {
 		  current_speed = reference_speed;
 		}
 
 		for (int i = 1; i <= 50 - previous_path_x.size(); i++) {
+		  if (current_speed > reference_speed) {
+		    current_speed -= velo_shift;
+		  } else if (current_speed < reference_speed) {
+		    current_speed += velo_shift;
+		  }
+
 		  double N = (target_dist / ( 0.02 * current_speed / 2.24));
 		  std::cout << "Generating " << target_dist << " points" << std::endl;
 		  double x_point = x_add_on + target_x / N;
@@ -369,11 +391,7 @@ int main() {
 		  next_x_vals.push_back(x_point);
 		  next_y_vals.push_back(y_point);
 
-		  if (current_speed > reference_speed) {
-		    current_speed -= velo_shift;
-		  } else if (current_speed < reference_speed) {
-		    current_speed += velo_shift;
-		  }
+		  std::cout << "Loop current speed: " << current_speed << " vs " << car_speed << std::endl;
 		}
 
           	msgJson["next_x"] = next_x_vals;
