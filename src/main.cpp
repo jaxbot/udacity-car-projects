@@ -343,8 +343,14 @@ int main() {
 
 		double x_add_on = 0;
 
+		double velo_shift = 0.2;
+		double current_speed = car_speed;
+		if (fabs(current_speed - reference_speed) < velo_shift) {
+		  current_speed = reference_speed;
+		}
+
 		for (int i = 1; i <= 50 - previous_path_x.size(); i++) {
-		  double N = (target_dist / ( 0.02 * reference_speed / 2.24));
+		  double N = (target_dist / ( 0.02 * current_speed / 2.24));
 		  std::cout << "Generating " << target_dist << " points" << std::endl;
 		  double x_point = x_add_on + target_x / N;
 		  double y_point = spline_s(x_point);
@@ -362,6 +368,12 @@ int main() {
 
 		  next_x_vals.push_back(x_point);
 		  next_y_vals.push_back(y_point);
+
+		  if (current_speed > reference_speed) {
+		    current_speed -= velo_shift;
+		  } else if (current_speed < reference_speed) {
+		    current_speed += velo_shift;
+		  }
 		}
 
           	msgJson["next_x"] = next_x_vals;
