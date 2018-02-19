@@ -9,6 +9,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "spline.h"
+#include "plannerstate.h"
 
 using namespace std;
 
@@ -35,6 +36,10 @@ string hasData(string s) {
   return "";
 }
 
+int getLaneFromD(double car_d) {
+  return car_d / 4;
+}
+
 double getLaneSpeed(int lane, double car_s, vector<vector<double>> sensor_fusion) {
   double min_s = 999999999;
   double speed = -1;
@@ -55,6 +60,35 @@ double getLaneSpeed(int lane, double car_s, vector<vector<double>> sensor_fusion
   }
 
   return speed * 2.24; // return in mph
+}
+
+bool canMakeLaneChange(int lane, double car_s, vector<vector<double>> sensor_fusion) {
+  double max_s = 0;
+  double min_s = 999999999;
+  double speed = -1;
+  for (int i = 0; i < sensor_fusion.size(); i++) {
+    float d = sensor_fusion[i][6];
+
+    if (d < (2 + 4 * lane + 2) && d > (2 + 4 * lane - 2)) {
+      double vx = sensor_fusion[i][3];
+      double vy = sensor_fusion[i][4];
+      double check_speed = sqrt(vx * vx + vy * vy);
+      double check_car_s = sensor_fusion[i][5];
+
+      // If it's behind us, find the closest car behind us
+      if (check_car_s < (car_s + 10) && check_car_s > max_s) {
+	max_s = check_car_s;
+	speed = check_speed;
+      }
+
+      // Also keep track of the closest car in front of the desired lane so that we do not rear-end it
+      if (check_car_s > car_s && check_car_s < min_s) {
+	min_s = check_car_s;
+      }
+    }
+  }
+
+  return (car_s - max_s) > 15.0 && (min_s - car_s) > 15.0;
 }
 
 double distance(double x1, double y1, double x2, double y2)
@@ -190,6 +224,11 @@ vector<double> getXY(double s, double d, const vector<double> &maps_s, const vec
 int main() {
   uWS::Hub h;
 
+  PlannerState state;
+  state.state = Follow;
+  state.lane = 1;
+  state.desired_lane = 1;
+
   // Load up map values for waypoint's x,y,s and d normalized normal vectors
   vector<double> map_waypoints_x;
   vector<double> map_waypoints_y;
@@ -201,6 +240,9 @@ int main() {
   string map_file_ = "../data/highway_map.csv";
   // The max s value before wrapping around the track back to 0
   double max_s = 6945.554;
+  
+  int atomic_timestep = 0;
+  vector<double> velocity_at_timestep;
 
   ifstream in_map_(map_file_.c_str(), ifstream::in);
 
@@ -225,7 +267,7 @@ int main() {
   }
 
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&state,&atomic_timestep,&velocity_at_timestep](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -251,6 +293,8 @@ int main() {
           	double car_d = j[1]["d"];
           	double car_yaw = j[1]["yaw"];
           	double car_speed = j[1]["speed"];
+
+		state.speed = car_speed;
 
           	// Previous path data given to the Planner
           	auto previous_path_x = j[1]["previous_path_x"];
@@ -301,16 +345,88 @@ int main() {
 
 		  double dx = (ref_x - ref_x_prev) / dt;
 		  double dy = (ref_y - ref_y_prev) / dt;
+		  vector<double> frenet = getFrenet(ref_x, ref_y, ref_yaw, map_waypoints_x, map_waypoints_y);
+		  vector<double> frenet_prev = getFrenet(ref_x_prev, ref_y_prev, ref_yaw, map_waypoints_x, map_waypoints_y);
 
-		  ref_velocity = sqrt(dx * dx + dy * dy) * 2.24;
+		  ref_velocity = sqrt(dx*dx + dy*dy) * 2.24;//(frenet[1] - frenet_prev[1]) / dt * 2.24;
+		  atomic_timestep += 50 - previous_path_x.size();
+		}
+
+		int lane = getLaneFromD(car_d);
+		state.lane = lane;
+
+		// figure out a safe lane speed
+		double speed = getLaneSpeed(lane, car_s, sensor_fusion);
+		std::cout << "Lane speed: " << speed << std::endl;
+		if (speed > -1) {
+		  reference_speed = speed;
+		} else {
+		  reference_speed = 49.0;
+		}
+
+		state.lane_speed = reference_speed;
+
+		// See if we can find a faster lane
+		double fastest_speed = reference_speed;
+		if (reference_speed < 49.0) {
+		  int fastest_lane = lane;
+
+		  for (int i = 0; i < 3; i++) {
+		    double lane_speed = getLaneSpeed(i, car_s, sensor_fusion);
+		    if (lane_speed < 0) {
+		      lane_speed = 49.0;
+		    }
+		    if (lane_speed > fastest_speed && abs(i - state.lane) <= 1) {
+		      fastest_lane = i;
+		      fastest_speed = lane_speed;
+		    }
+		  }
+
+		  state.desired_lane = fastest_lane;
+		}
+
+		if (state.lane != state.desired_lane) {
+		  state.state = PrepareLaneChange;
+		} else {
+		  state.state = Follow;
+		}
+
+		if (state.state == PrepareLaneChange) {
+		  if (canMakeLaneChange(state.desired_lane, car_s, sensor_fusion)) {
+		    state.state = LaneChange;
+		  }
 		}
 
 		// Find our next anchor points we plan to pass through.
 		vector<vector<double>> anchor_points;
-		int waypoint_spacing = 30.0;
-		int lane = 1;
+		int waypoint_spacing = 50.0;
 		for (int i = 1; i <= 3; i++) {
-		  vector<double> xy = getXY(car_s + waypoint_spacing * i, (2 + 4 * lane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
+		  double d_path = (2 + 4 * lane);
+		  double desired_lane_path = (2 + 4 * state.desired_lane);
+		  if (state.state == LaneChange) {
+		    d_path = (2 + 4 * state.desired_lane);
+		    /*if (state.desired_lane < lane) { // left lane change
+		      d_path = car_d - i * 1.5;
+		    } else {
+		      d_path = car_d + i * 1.5;
+		    }*/
+		    /*
+		    cout << "D: " << d_path << " Desired: " << desired_lane_path << " Desired lane: " << state.desired_lane << std::endl;
+		    if (car_d < 1 + 4 * lane)
+		    if (i == 1) {
+		      if (lane < state.desired_lane) {
+			d_path = (4 * state.desired_lane);
+		      } else {
+			d_path = (4 * lane);
+		      }
+		    }
+		    if (i == 3 || i == 2) {
+		      d_path = (2 + 4 * state.desired_lane);
+		    }
+		    */
+		    cout << "D: " << d_path << " Desired: " << desired_lane_path << std::endl;
+		  }
+		  vector<double> xy = getXY(car_s + waypoint_spacing * i, d_path, map_waypoints_s, map_waypoints_x, map_waypoints_y);
 		  ptsx.push_back(xy[0]);
 		  ptsy.push_back(xy[1]);
 		}
@@ -336,16 +452,7 @@ int main() {
 		  next_y_vals.push_back(previous_path_y[i]);
 		}
 
-		// figure out a safe lane speed
-		double speed = getLaneSpeed(lane, car_s, sensor_fusion);
-		std::cout << "Lane speed: " << speed << std::endl;
-		if (speed > -1) {
-		  reference_speed = speed;
-		} else {
-		  reference_speed = 49.0;
-		}
-
-		double target_x = 30.0;
+		double target_x = 50.0;
 		double target_y = spline_s(target_x);
 		double target_dist = sqrt((target_x * target_x) + (target_y * target_y));
 
@@ -355,14 +462,23 @@ int main() {
 		double current_speed = car_speed;
 
 		// If we have points in the previous path, figure out the speed at the end of the path.
+		if (state.state == LaneChange) {
+		  reference_speed = fastest_speed;
+		  // be more conservative about velocity shifts during lateral movements
+		  velo_shift = 0.2;
+		}
 		if (previous_path_x.size() > 2) {
 		  current_speed = ref_velocity;
 		  std::cout << "Current speed: " << current_speed << " vs " << car_speed << std::endl;
 		}
 		std::cout << "Reference speed " << reference_speed << std::endl;
 
-		if (fabs(current_speed - reference_speed) < velo_shift) {
+		if (fabs(current_speed - reference_speed) < 1) {
 		  current_speed = reference_speed;
+		}
+
+		if (atomic_timestep > 0) {
+		  //current_speed = velocity_at_timestep[atomic_timestep];
 		}
 
 		for (int i = 1; i <= 50 - previous_path_x.size(); i++) {
@@ -392,6 +508,8 @@ int main() {
 		  next_y_vals.push_back(y_point);
 
 		  std::cout << "Loop current speed: " << current_speed << " vs " << car_speed << std::endl;
+
+		  velocity_at_timestep.push_back(current_speed);
 		}
 
           	msgJson["next_x"] = next_x_vals;
@@ -401,7 +519,22 @@ int main() {
 
           	//this_thread::sleep_for(chrono::milliseconds(1000));
           	ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
-        }
+	} else if (event == "dashboard") {
+	  // Send state payload to dashboard
+	  json payload;
+	  payload["speed"] = state.speed;
+	  payload["lane_speed"] = state.lane_speed;
+	  payload["lane"] = state.lane;
+	  payload["state"] = state.state;
+	  std::string msg = "42[\"dashboard\"," + payload.dump() + "]";
+	  ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
+	} else if (event == "lane_change") {
+	  state.state = PrepareLaneChange;
+	  state.desired_lane -= 1;
+	  if (state.desired_lane < 0) {
+	    state.desired_lane = 1;
+	  }
+	}
       } else {
         // Manual driving
         std::string msg = "42[\"manual\",{}]";
@@ -416,11 +549,30 @@ int main() {
   h.onHttpRequest([](uWS::HttpResponse *res, uWS::HttpRequest req, char *data,
                      size_t, size_t) {
     const std::string s = "<h1>Hello world!</h1>";
-    if (req.getUrl().valueLength == 1) {
-      res->end(s.data(), s.length());
+    cout << req.getUrl().toString() << std::endl;
+    std::string url = req.getUrl().toString();
+    std::string filedata = "";
+    std::string filename = "";
+    std::string line = "";
+    if (url == "/") {
+      filename = "../src/dashboard.html";
+    }
+    if (url == "/dashboard.js") {
+      filename = "../src/dashboard.js";
+    }
+    if (filename != "") {
+      ifstream myfile (filename);
+      if (myfile.is_open())
+      {
+      while ( getline (myfile,line) )
+      {
+	filedata += line;
+      }
+      myfile.close();
+      }
+      res->end(filedata.data(), filedata.length());
     } else {
-      // i guess this should be done more gracefully?
-      res->end(nullptr, 0);
+      res->end(s.data(), s.length());
     }
   });
 
