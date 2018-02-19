@@ -40,7 +40,7 @@ int getLaneFromD(double car_d) {
   return car_d / 4;
 }
 
-double getLaneSpeed(int lane, double car_s, vector<vector<double>> sensor_fusion) {
+double getLaneSpeed(int lane, double car_s, vector<vector<double>> sensor_fusion, double lookahead_distance = 30.0) {
   double min_s = 999999999;
   double speed = -1;
   for (int i = 0; i < sensor_fusion.size(); i++) {
@@ -52,7 +52,7 @@ double getLaneSpeed(int lane, double car_s, vector<vector<double>> sensor_fusion
       double check_speed = sqrt(vx * vx + vy * vy);
       double check_car_s = sensor_fusion[i][5];
 
-      if (check_car_s > car_s && check_car_s < min_s && check_car_s - car_s < 30) {
+      if (check_car_s > car_s && check_car_s < min_s && check_car_s - car_s < lookahead_distance) {
 	min_s = check_car_s;
 	speed = check_speed;
       }
@@ -89,6 +89,25 @@ bool canMakeLaneChange(int lane, double car_s, vector<vector<double>> sensor_fus
   }
 
   return (car_s - max_s) > 15.0 && (min_s - car_s) > 15.0;
+}
+
+double distanceToLeadCar(int lane, double car_s, vector<vector<double>> sensor_fusion) {
+  double min_s = 999999999;
+  for (int i = 0; i < sensor_fusion.size(); i++) {
+    float d = sensor_fusion[i][6];
+
+    if (d < (2 + 4 * lane + 2) && d > (2 + 4 * lane - 2)) {
+      double vx = sensor_fusion[i][3];
+      double vy = sensor_fusion[i][4];
+      double check_car_s = sensor_fusion[i][5];
+
+      if (check_car_s > car_s && check_car_s < min_s) {
+	min_s = check_car_s;
+      }
+    }
+  }
+
+  return min_s - car_s;
 }
 
 double distance(double x1, double y1, double x2, double y2)
@@ -357,18 +376,27 @@ int main() {
 
 		// figure out a safe lane speed
 		double speed = getLaneSpeed(lane, car_s, sensor_fusion);
+		double speed_far_out = getLaneSpeed(lane, car_s, sensor_fusion, 60.0);
+		double following_distance = distanceToLeadCar(state.lane, car_s, sensor_fusion);
 		std::cout << "Lane speed: " << speed << std::endl;
 		if (speed > -1) {
 		  reference_speed = speed;
 		} else {
 		  reference_speed = 49.0;
+		  // If no car is within 30m, we can continue to accelerate.
+		  // However, if a car exists within 60m, we should approach it at
+		  // a safer speed. Otherwise we may come within 30m of a car going 30mph
+		  // while we're going 50mph and have to slam on the brakes, causing jerk.
+		  if (speed_far_out > -1 && following_distance > 31) {
+		    reference_speed -= (reference_speed - speed_far_out) / 3.0;
+		  }
 		}
 
 		state.lane_speed = reference_speed;
 
 		// See if we can find a faster lane
 		double fastest_speed = reference_speed;
-		if (reference_speed < 49.0) {
+		if (reference_speed < 49.0 && state.state != LaneChange) {
 		  int fastest_lane = lane;
 
 		  for (int i = 0; i < 3; i++) {
@@ -385,21 +413,48 @@ int main() {
 		  state.desired_lane = fastest_lane;
 		}
 
+		// update fastest speed when making a lane change to match the desired lane's speed
+		if (state.state == LaneChange || state.state == PrepareLaneChange) {
+		  fastest_speed = getLaneSpeed(state.desired_lane, car_s, sensor_fusion);
+		  if (fastest_speed < 0) {
+		    fastest_speed = 49.0;
+		  }
+		}
+
 		if (state.lane != state.desired_lane) {
-		  state.state = PrepareLaneChange;
+		  if (state.state == Follow) {
+		    state.state = PrepareLaneChange;
+		  }
 		} else {
 		  state.state = Follow;
 		}
 
 		if (state.state == PrepareLaneChange) {
-		  if (canMakeLaneChange(state.desired_lane, car_s, sensor_fusion)) {
-		    state.state = LaneChange;
+		  if (canMakeLaneChange(state.desired_lane, car_s, sensor_fusion) && following_distance >= 15) {
+		    // Do not make a lane change that would require significant braking at high speeds
+		    if (ref_velocity - fastest_speed < 15 || ref_velocity < 42) {
+		      state.state = LaneChange;
+		    }
+		  }
+		}
+
+		// Ensure we back off the car in front
+		if (state.state == Follow || state.state == PrepareLaneChange) {
+		  if (following_distance < 15) {
+		    reference_speed -= 1.0;
+		    cout << "Attempting to back off lead car " << following_distance << std::endl;
+		    // Sometimes we have to brake to make a lane change. This can happen if we're going faster than our lane's normal speed, but our lane is still slower than an adjacent lane.
+		  } else if (state.state == PrepareLaneChange && ref_velocity - fastest_speed >= 15 && ref_velocity >= 42) {
+		    reference_speed -= 1.0;
 		  }
 		}
 
 		// Find our next anchor points we plan to pass through.
 		vector<vector<double>> anchor_points;
-		int waypoint_spacing = 50.0;
+		int waypoint_spacing = 40.0;
+		if (state.state == LaneChange) {
+		  waypoint_spacing = 50.0;
+		}
 		for (int i = 1; i <= 3; i++) {
 		  double d_path = (2 + 4 * lane);
 		  double desired_lane_path = (2 + 4 * state.desired_lane);
@@ -452,23 +507,24 @@ int main() {
 		  next_y_vals.push_back(previous_path_y[i]);
 		}
 
-		double target_x = 50.0;
+		double speed_limit = 49.0;
+		double target_x = waypoint_spacing;
 		double target_y = spline_s(target_x);
 		double target_dist = sqrt((target_x * target_x) + (target_y * target_y));
 
 		double x_add_on = 0;
 
-		double velo_shift = 0.3;
+		double velo_shift = 0.25;
 		double current_speed = car_speed;
 
 		// If we have points in the previous path, figure out the speed at the end of the path.
 		if (state.state == LaneChange) {
 		  reference_speed = fastest_speed;
 		  // be more conservative about velocity shifts during lateral movements
-		  velo_shift = 0.2;
+		  velo_shift = 0.15;
 		}
 		if (previous_path_x.size() > 2) {
-		  current_speed = ref_velocity;
+		  current_speed = ref_velocity + 0.1;
 		  std::cout << "Current speed: " << current_speed << " vs " << car_speed << std::endl;
 		}
 		std::cout << "Reference speed " << reference_speed << std::endl;
@@ -479,6 +535,14 @@ int main() {
 
 		if (atomic_timestep > 0) {
 		  //current_speed = velocity_at_timestep[atomic_timestep];
+		}
+
+		if (state.state == LaneChange && reference_speed >= 49) {
+		  reference_speed = 48; // slow a little during lane change because the simulator counts lateral movement itno the speed as well, which can cause speed violations
+		}
+
+		if (current_speed > speed_limit) {
+		  current_speed = speed_limit;
 		}
 
 		for (int i = 1; i <= 50 - previous_path_x.size(); i++) {
