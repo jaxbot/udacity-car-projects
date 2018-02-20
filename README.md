@@ -1,140 +1,38 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
-   
-### Simulator.
-You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases).
 
-### Goals
-In this project your goal is to safely navigate around a virtual highway with other traffic that is driving +-10 MPH of the 50 MPH speed limit. You will be provided the car's localization and sensor fusion data, there is also a sparse map list of waypoints around the highway. The car should try to go as close as possible to the 50 MPH speed limit, which means passing slower traffic when possible, note that other cars will try to change lanes too. The car should avoid hitting other cars at all cost as well as driving inside of the marked road lanes at all times, unless going from one lane to another. The car should be able to make one complete loop around the 6946m highway. Since the car is trying to go 50 MPH, it should take a little over 5 minutes to complete 1 loop. Also the car should not experience total acceleration over 10 m/s^2 and jerk that is greater than 10 m/s^3.
+[state-machine]: ./state-machine.png "State machine"
+[lane-change]: ./lane-change.gif "GIF of a lane change in the simulator"
 
-#### The map of the highway is in data/highway_map.txt
-Each waypoint in the list contains  [x,y,s,dx,dy] values. x and y are the waypoint's map coordinate position, the s value is the distance along the road to get to that waypoint in meters, the dx and dy values define the unit normal vector pointing outward of the highway loop.
+![GIF of a lane change in the simulator][lane-change]
 
-The highway's waypoints loop around so the frenet s value, distance along the road, goes from 0 to 6945.554.
+## Reflection: Model documentation
 
-## Basic Build Instructions
+The method for generating points in this model is based on the advice given in the project walkthrough video. However, many changes were made to fine-tune performance and answer acceleration and jerk thresholds were maintained while traveling for miles without incident. In testing, the car has been able to travel more than 25 miles without incident; the only caveat comes from when vehicles in the simulator cut off our car, in which case there exists no choice but to slam on the brakes and incur a jerk violation.
 
-1. Clone this repo.
-2. Make a build directory: `mkdir build && cd build`
-3. Compile: `cmake .. && make`
-4. Run it: `./path_planning`.
+The anchor points are spaced 40m apart, 10m further than the classroom example, which gives the car smoother (less jerky) movements with the tradeoff that the vehicle may briefly kiss lane lines during sharper curves. This value is increased to 50m during lane changes to ensure smoother curves.
 
-Here is the data provided from the Simulator to the C++ Program
+The velocity of the vehicle in the planner is calculated based on the expected velocity at the simulator's previous points, not necessarily the currently given car speed. This allows us to space path points apart with full control over the acceleration curve. In normal following, velocity shifts are capped at 0.25mph +/- between points. During lane changes, this is reduced to 0.15mph to limit jerkiness while moving laterally.
 
-#### Main car's localization Data (No Noise)
+The path generation is limited to generating points for a given speed and lane position. The determination of safe speed and lane position is predetermined by the planner using a state machine.
 
-["x"] The car's x position in map coordinates
+### State machine
 
-["y"] The car's y position in map coordinates
+The planner has three defined states: Follow, PrepareLaneChange, and LaneChange, which transition in the following way:
 
-["s"] The car's s position in frenet coordinates
+![State machine][state-machine]
 
-["d"] The car's d position in frenet coordinates
+The default state is Follow, in which the car will follow the speed of the lead car, or otherwise proceed at the speed limit. If the car becomes too close (less than 30m away), the car will reduce speed slightly to grow a gap. This gives us ample stopping distance without having to slam on the brakes uncomfortably.
 
-["yaw"] The car's yaw angle in the map
+If the lead car is traveling below the speed limit, the planner will transition from the Follow state to the PrepareLaneChange state, and keep track of the current fastest lane adjacent to the car's path. In this state, the car will immediately transition to making a lane change if the following conditions are met, indicating a safe lane change is possible:
 
-["speed"] The car's speed in MPH
+* The desired lane's lead car is at least 15m in front
+* The desired lane's tailing car is at least 15m behind
+* The current lane's lead car is at least 15m in front, such that we will not risk hitting it while
+* There is less than a 15mph difference in lane speeds, or the vehicle is traveling at a low enough speed that jerk will not be a concern.
 
-#### Previous path data given to the Planner
+While these conditions are not met, the car in PrepareLaneChange state will drive similarly to the Follow state, except that it will slow down to the desired lane's speed if necessary to initiate the lane change.
 
-//Note: Return the previous list but with processed points removed, can be a nice tool to show how far along
-the path has processed since last time. 
+Once transitioning to the LaneChange state, the anchor generation starts plotting points in the desired lane instead of the correct lane, and waypoints are spaced slightly further apart for a smoother curve; in addition, the velocity change rate is reduced to prevent heavy acceleration or braking during the lane change. Most importantly, the desired lane is now static, and the planner will no longer check for faster lanes during the maneuvar. This prevents the car from starting a lane change and swinging back out aggressively when other vehicles speed up / slow down and make the other lane more desirable, but it does come with the drawback that the vehicle may complete a full lane change, then immediately lane change back to the previous lane, depending on the behavior of the other vehicles on the road.
 
-["previous_path_x"] The previous list of x points previously given to the simulator
-
-["previous_path_y"] The previous list of y points previously given to the simulator
-
-#### Previous path's end s and d values 
-
-["end_path_s"] The previous list's last point's frenet s value
-
-["end_path_d"] The previous list's last point's frenet d value
-
-#### Sensor Fusion Data, a list of all other car's attributes on the same side of the road. (No Noise)
-
-["sensor_fusion"] A 2d vector of cars and then that car's [car's unique ID, car's x position in map coordinates, car's y position in map coordinates, car's x velocity in m/s, car's y velocity in m/s, car's s position in frenet coordinates, car's d position in frenet coordinates. 
-
-## Details
-
-1. The car uses a perfect controller and will visit every (x,y) point it recieves in the list every .02 seconds. The units for the (x,y) points are in meters and the spacing of the points determines the speed of the car. The vector going from a point to the next point in the list dictates the angle of the car. Acceleration both in the tangential and normal directions is measured along with the jerk, the rate of change of total Acceleration. The (x,y) point paths that the planner recieves should not have a total acceleration that goes over 10 m/s^2, also the jerk should not go over 50 m/s^3. (NOTE: As this is BETA, these requirements might change. Also currently jerk is over a .02 second interval, it would probably be better to average total acceleration over 1 second and measure jerk from that.
-
-2. There will be some latency between the simulator running and the path planner returning a path, with optimized code usually its not very long maybe just 1-3 time steps. During this delay the simulator will continue using points that it was last given, because of this its a good idea to store the last points you have used so you can have a smooth transition. previous_path_x, and previous_path_y can be helpful for this transition since they show the last points given to the simulator controller with the processed points already removed. You would either return a path that extends this previous path or make sure to create a new path that has a smooth transition with this last path.
-
-## Tips
-
-A really helpful resource for doing this project and creating smooth trajectories was using http://kluge.in-chemnitz.de/opensource/spline/, the spline function is in a single hearder file is really easy to use.
-
----
-
-## Dependencies
-
-* cmake >= 3.5
- * All OSes: [click here for installation instructions](https://cmake.org/install/)
-* make >= 4.1
-  * Linux: make is installed by default on most Linux distros
-  * Mac: [install Xcode command line tools to get make](https://developer.apple.com/xcode/features/)
-  * Windows: [Click here for installation instructions](http://gnuwin32.sourceforge.net/packages/make.htm)
-* gcc/g++ >= 5.4
-  * Linux: gcc / g++ is installed by default on most Linux distros
-  * Mac: same deal as make - [install Xcode command line tools]((https://developer.apple.com/xcode/features/)
-  * Windows: recommend using [MinGW](http://www.mingw.org/)
-* [uWebSockets](https://github.com/uWebSockets/uWebSockets)
-  * Run either `install-mac.sh` or `install-ubuntu.sh`.
-  * If you install from source, checkout to commit `e94b6e1`, i.e.
-    ```
-    git clone https://github.com/uWebSockets/uWebSockets 
-    cd uWebSockets
-    git checkout e94b6e1
-    ```
-
-## Editor Settings
-
-We've purposefully kept editor configuration files out of this repo in order to
-keep it as simple and environment agnostic as possible. However, we recommend
-using the following settings:
-
-* indent using spaces
-* set tab width to 2 spaces (keeps the matrices in source code aligned)
-
-## Code Style
-
-Please (do your best to) stick to [Google's C++ style guide](https://google.github.io/styleguide/cppguide.html).
-
-## Project Instructions and Rubric
-
-Note: regardless of the changes you make, your project must be buildable using
-cmake and make!
-
-
-## Call for IDE Profiles Pull Requests
-
-Help your fellow students!
-
-We decided to create Makefiles with cmake to keep this project as platform
-agnostic as possible. Similarly, we omitted IDE profiles in order to ensure
-that students don't feel pressured to use one IDE or another.
-
-However! I'd love to help people get up and running with their IDEs of choice.
-If you've created a profile for an IDE that you think other students would
-appreciate, we'd love to have you add the requisite profile files and
-instructions to ide_profiles/. For example if you wanted to add a VS Code
-profile, you'd add:
-
-* /ide_profiles/vscode/.vscode
-* /ide_profiles/vscode/README.md
-
-The README should explain what the profile does, how to take advantage of it,
-and how to install it.
-
-Frankly, I've never been involved in a project with multiple IDE profiles
-before. I believe the best way to handle this would be to keep them out of the
-repo root to avoid clutter. My expectation is that most profiles will include
-instructions to copy files to a new location to get picked up by the IDE, but
-that's just a guess.
-
-One last note here: regardless of the IDE used, every submitted project must
-still be compilable with cmake and make./
-
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
-
+The planner automatically transitions back to Follow any time the current lane is the most desirable lane (i.e. is the fastest), and this happens both when a lane change is completed and when a lane change is no longer necessary.
