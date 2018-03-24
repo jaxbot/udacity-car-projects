@@ -5,7 +5,7 @@ import sys
 import rospy
 from std_msgs.msg import Int32
 from geometry_msgs.msg import PoseStamped
-from styx_msgs.msg import Lane, Waypoint
+from styx_msgs.msg import Lane, Waypoint, TrafficLightArray, TrafficLight
 
 '''
 This node will publish waypoints from the car's current position to some `x` distance ahead.
@@ -23,7 +23,9 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 '''
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
-
+MAX_DECEL = 0.8
+STOP_DISTANCE = 25
+TESTING = False
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -34,9 +36,17 @@ class WaypointUpdater(object):
         rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
         rospy.Subscriber('/obstacle_waypoint', Int32, self.obstacle_cb)
 
+        if TESTING:
+            rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray,
+                             self.traffic_lights_cb, queue_size=1)
+
         self.final_waypoints_pub = rospy.Publisher('final_waypoints', Lane, queue_size=1)
 
         self.base_waypoints = None
+        self.traffic_lights = None
+        self.traffic_lights_waypoints = []
+        self.red_traffic_light_waypoint = -1
+        self.max_velocity = self.kmph2mps(rospy.get_param('/waypoint_loader/velocity'))
 
         rospy.spin()
 
@@ -46,22 +56,50 @@ class WaypointUpdater(object):
         start = current_car_wp_index + 1
         stop = min(len(self.base_waypoints.waypoints),
                    start + LOOKAHEAD_WPS)
-        final_waypoints = Lane()
-        for i in range(start, stop):
-            final_waypoints.waypoints.append(self.base_waypoints.waypoints[i])
+        if self.is_red_traffic_light_ahead(start, stop):
+            stop_waypoint = self.get_stop_waypoint(self.red_traffic_light_waypoint,
+                                                   STOP_DISTANCE)
 
+            for i in range(start, stop_waypoint + 1):
+                dist = self.distance(
+                    waypoints=self.base_waypoints.waypoints,
+                    wp1=i,
+                    wp2=stop_waypoint)
+                vel = math.sqrt(2 * MAX_DECEL * dist)
+                vel = min(vel, self.get_waypoint_velocity(
+                                        self.base_waypoints.waypoints[i]))
+
+                self.set_waypoint_velocity(self.base_waypoints.waypoints, i, vel)
+
+            for i in range(stop_waypoint, self.red_traffic_light_waypoint + 1):
+                self.set_waypoint_velocity(self.base_waypoints.waypoints, i, 0)
+            stop = self.red_traffic_light_waypoint
+        else:
+            for i in range(start, stop):
+                self.set_waypoint_velocity(self.base_waypoints.waypoints, i,
+                                           self.max_velocity)
+
+        final_waypoints = Lane()
+        final_waypoints.waypoints = self.base_waypoints.waypoints[start:stop]
         self.final_waypoints_pub.publish(final_waypoints)
 
     def waypoints_cb(self, waypoints):
         self.base_waypoints = waypoints
 
     def traffic_cb(self, msg):
-        # TODO: Callback for /traffic_waypoint message. Implement
-        pass
+        self.red_traffic_light_waypoint = msg
 
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
         pass
+
+    def traffic_lights_cb(self, msg):
+        if self.traffic_lights is None:
+            for light in msg.lights:
+                light_index = self.get_closest_waypoint(light.pose.pose)
+                self.traffic_lights_waypoints.append(light_index)
+            rospy.logerr(self.traffic_lights_waypoints)
+        self.traffic_lights = msg
 
     def get_waypoint_velocity(self, waypoint):
         return waypoint.twist.twist.linear.x
@@ -76,6 +114,16 @@ class WaypointUpdater(object):
             dist += dl(waypoints[wp1].pose.pose.position, waypoints[i].pose.pose.position)
             wp1 = i
         return dist
+
+    def get_stop_waypoint(self, red_light_waypoint, stop_distance):
+        for i in range(red_light_waypoint, 0, -1):
+            dist = self.distance(
+                    self.base_waypoints.waypoints,
+                    i,
+                    red_light_waypoint)
+
+            if dist >= stop_distance:
+                return i
 
     def get_closest_waypoint(self, pose):
         """Identifies the closest path waypoint to the given position
@@ -99,6 +147,30 @@ class WaypointUpdater(object):
 
         return closest_wp_index
 
+    def kmph2mps(self, velocity_kmph):
+        return (velocity_kmph * 1000.) / (60. * 60.)
+
+    def is_red_traffic_light_ahead(self, wp_start, wp_stop):
+        is_red_traffic_light_ahead = False
+        wp_start = wp_start + STOP_DISTANCE
+
+        if TESTING is not True:
+            if (self.red_traffic_light_waypoint >= wp_start and
+                self.red_traffic_light_waypoint <= wp_stop):
+                is_red_traffic_light_ahead = True
+                return is_red_traffic_light_ahead
+
+        if self.traffic_lights is None:
+            return is_red_traffic_light_ahead
+
+        for i, waypoint_index in enumerate(self.traffic_lights_waypoints):
+            if waypoint_index >= wp_start and waypoint_index <= wp_stop:
+                if self.traffic_lights.lights[i].state == TrafficLight.RED:
+                    is_red_traffic_light_ahead = True
+                    self.red_traffic_light_waypoint = waypoint_index
+                    break
+
+        return is_red_traffic_light_ahead
 
 if __name__ == '__main__':
     try:
