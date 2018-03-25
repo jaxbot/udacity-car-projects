@@ -63,17 +63,19 @@ class WaypointUpdater(object):
                                             cycle(self.base_waypoints.waypoints),
                                             start,
                                             start + waypoints_size))
-
-        if self.is_red_traffic_light_ahead(self.final_waypoints.waypoints):
-            stop_waypoint = self.get_stop_waypoint(self.red_traffic_light_waypoint,
-                                                   self.final_waypoints.waypoints,
-                                                   STOP_DISTANCE)
+        local_red_traffic_light_waypoint = self.is_red_traffic_light_ahead(
+                                            self.final_waypoints.waypoints)
+        if local_red_traffic_light_waypoint >= 0:
+            stop_waypoint = self.get_stop_waypoint(
+                                    local_red_traffic_light_waypoint,
+                                    self.final_waypoints.waypoints,
+                                    STOP_DISTANCE)
 
             self.decrease_for_stop(self.final_waypoints.waypoints,
                               stop_waypoint,
-                              self.red_traffic_light_waypoint)
+                              local_red_traffic_light_waypoint)
 
-            self.final_waypoints.waypoints = self.final_waypoints.waypoints[:self.red_traffic_light_waypoint]
+            self.final_waypoints.waypoints = self.final_waypoints.waypoints[:local_red_traffic_light_waypoint]
         else:
             for i in range(waypoints_size):
                 self.set_waypoint_velocity(self.final_waypoints.waypoints,
@@ -86,9 +88,16 @@ class WaypointUpdater(object):
         self.base_waypoints = waypoints
 
     def traffic_cb(self, msg):
-        set_waypoint_as_red_traffic_light(
-            self.base_waypoints.waypoints[msg],
-            is_red_traffic_light=True)
+        if msg.data >= 0:
+            self.set_waypoint_as_red_traffic_light(
+                self.base_waypoints.waypoints[msg.data],
+                is_red_traffic_light=True)
+        elif self.red_traffic_light_waypoint >= 0:
+            self.set_waypoint_as_red_traffic_light(
+                self.base_waypoints.waypoints[self.red_traffic_light_waypoint],
+                is_red_traffic_light=False)
+
+        self.red_traffic_light_waypoint = msg.data
 
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
@@ -169,15 +178,11 @@ class WaypointUpdater(object):
         return waypoint.twist.twist.angular.z > 0.
 
     def is_red_traffic_light_ahead(self, waypoints):
-        found = False
-
         for i in range(len(waypoints)):
             if self.is_red_traffic_light_waypoint(waypoints[i]):
-                self.red_traffic_light_waypoint = i
-                found = True
-                break
+                return i
 
-        return found
+        return -1
 
     def decrease_for_stop(self, waypoints, stop_waypoint, traffic_light_waypoint):
         for i in range(0, stop_waypoint):
