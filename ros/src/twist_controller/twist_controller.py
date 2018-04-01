@@ -24,7 +24,7 @@ class Controller(object):
                                 max_lat_accel=kwargs['max_lat_accel'],
                                 max_steer_angle=kwargs['max_steer_angle'])
         # PIDs:
-        self.accel_pid = PID(kp=0.04, ki=0.0, kd=0.05,
+        self.accel_pid = PID(kp=0.5, ki=0.0, kd=0.1,
                 mx=kwargs['accel_limit'], mn=kwargs['decel_limit'])
         self.steer_pid = PID(kp=0.5, ki=0.5, kd=0.1,
                 mx=kwargs['max_steer_angle'],
@@ -74,5 +74,5 @@ class Controller(object):
         @param accel: acceleration input
         '''
         total_mass = self.vehicle_mass + self.fuel_capacity * GAS_DENSITY
-        torque = -1.0 * 0.05 * accel * total_mass * self.wheel_radius
+        torque = -1.0 * accel * total_mass * self.wheel_radius
         return torque

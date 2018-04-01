@@ -1,9 +1,6 @@
 <launch>
-  <arg name="bagfile" default="/media/sf_capstone/udacity_succesful_light_detection.bag"/>
-  <!-- <node pkg="rosbag" type="play" name="rosbag" args="
-  $(find styx)../../../data/dbw_test.rosbag.bag /vehicle/throttle_cmd:=/actual/throttle_cmd /vehicle/steering_cmd:=/actual/steering_cmd /vehicle/brake_cmd:=/actual/brake_cmd" required="true"/> -->
   <node pkg="rosbag" type="play" name="rosbag" args="
-  $(arg bagfile) /vehicle/throttle_cmd:=/actual/throttle_cmd /vehicle/steering_cmd:=/actual/steering_cmd /vehicle/brake_cmd:=/actual/brake_cmd" required="true"/>
+  $(find twist_controller)/../../../udacity_succesful_light_detection.bag /vehicle/throttle_cmd:=/actual/throttle_cmd /vehicle/steering_cmd:=/actual/steering_cmd /vehicle/brake_cmd:=/actual/brake_cmd" required="true"/>
   <node pkg="twist_controller" type="dbw_test.py" name="dbw_test"/>
   <include file="$(find twist_controller)/launch/dbw.launch"/>
 </launch>
