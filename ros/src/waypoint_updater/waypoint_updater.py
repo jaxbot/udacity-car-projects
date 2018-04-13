@@ -25,8 +25,7 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
 MAX_DECEL = 0.8
-STOP_DISTANCE = 25
-TESTING = False
+STOP_DISTANCE = 2
 
 class WaypointUpdater(object):
     def __init__(self):
@@ -37,17 +36,11 @@ class WaypointUpdater(object):
         rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
         rospy.Subscriber('/obstacle_waypoint', Int32, self.obstacle_cb)
 
-        if TESTING:
-            rospy.Subscriber('/vehicle/traffic_lights', TrafficLightArray,
-                             self.traffic_lights_cb, queue_size=1)
-
         self.final_waypoints_pub = rospy.Publisher('final_waypoints',
                                                    Lane,
                                                    queue_size=1)
         self.final_waypoints = Lane()
         self.base_waypoints = None
-        self.traffic_lights = None
-        self.traffic_lights_waypoints = []
         self.red_traffic_light_waypoint = -1
         self.max_velocity = self.kmph2mps(rospy.get_param('/waypoint_loader/velocity'))
 
@@ -103,19 +96,6 @@ class WaypointUpdater(object):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
         pass
 
-    def traffic_lights_cb(self, msg):
-        if self.traffic_lights is None:
-            for light in msg.lights:
-                light_index = self.get_closest_waypoint(light.pose.pose)
-                self.traffic_lights_waypoints.append(light_index)
-        else:
-            for i, waypoint_index in enumerate(self.traffic_lights_waypoints):
-                self.set_waypoint_as_red_traffic_light(
-                    self.base_waypoints.waypoints[waypoint_index],
-                    self.traffic_lights.lights[i].state == TrafficLight.RED)
-
-        self.traffic_lights = msg
-
     def get_waypoint_velocity(self, waypoint):
         return waypoint.twist.twist.linear.x
 
@@ -155,7 +135,7 @@ class WaypointUpdater(object):
         min_dist = sys.maxsize
         closest_wp_index = 0
 
-        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2  + (a.z-b.z)**2)
+        dl = lambda a, b: math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2)
         for i in range(len(self.base_waypoints.waypoints)):
             dist = dl(pose.position, self.base_waypoints.waypoints[i].pose.pose.position)
             if dist <= min_dist:
