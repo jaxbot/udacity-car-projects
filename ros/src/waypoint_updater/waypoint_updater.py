@@ -5,7 +5,7 @@ from itertools import cycle, islice
 
 import rospy
 from std_msgs.msg import Int32
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, TwistStamped
 from styx_msgs.msg import Lane, Waypoint, TrafficLightArray, TrafficLight
 
 '''
@@ -26,15 +26,11 @@ TODO (for Yousuf and Aaron): Stopline location for each traffic light.
 LOOKAHEAD_WPS = 200 # Number of waypoints we will publish. You can change this number
 MAX_DECEL = 0.8
 STOP_DISTANCE = 2
+VELOCITY_OFFSET = 0.5
 
 class WaypointUpdater(object):
     def __init__(self):
         rospy.init_node('waypoint_updater')
-
-        rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
-        rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
-        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
-        rospy.Subscriber('/obstacle_waypoint', Int32, self.obstacle_cb)
 
         self.final_waypoints_pub = rospy.Publisher('final_waypoints',
                                                    Lane,
@@ -43,10 +39,20 @@ class WaypointUpdater(object):
         self.base_waypoints = None
         self.red_traffic_light_waypoint = -1
         self.max_velocity = self.kmph2mps(rospy.get_param('/waypoint_loader/velocity'))
+        self.current_velocity = 0.
+
+        rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
+        rospy.Subscriber('/current_velocity', TwistStamped, self.velocity_cb)
+        rospy.Subscriber('/traffic_waypoint', Int32, self.traffic_cb)
+        rospy.Subscriber('/obstacle_waypoint', Int32, self.obstacle_cb)
+        rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
 
         rospy.spin()
 
     def pose_cb(self, msg):
+        if self.base_waypoints is None:
+            return
+
         current_car_wp_index = self.get_closest_waypoint(msg.pose)
 
         start = current_car_wp_index + 1
@@ -74,6 +80,7 @@ class WaypointUpdater(object):
                 self.set_waypoint_velocity(self.final_waypoints.waypoints,
                                             i,
                                             self.max_velocity)
+        self.avoid_sudden_acceleration(self.final_waypoints.waypoints)
 
         self.final_waypoints_pub.publish(self.final_waypoints)
 
@@ -95,6 +102,9 @@ class WaypointUpdater(object):
     def obstacle_cb(self, msg):
         # TODO: Callback for /obstacle_waypoint message. We will implement it later
         pass
+
+    def velocity_cb(self, msg):
+        self.current_velocity = msg.twist.linear.x
 
     def get_waypoint_velocity(self, waypoint):
         return waypoint.twist.twist.linear.x
@@ -163,6 +173,22 @@ class WaypointUpdater(object):
                 return i
 
         return -1
+
+    def avoid_sudden_acceleration(self, waypoints):
+        current_velocity_squared = self.current_velocity * self.current_velocity
+        for i in range(len(waypoints) - 1):
+            dist = self.distance(
+                waypoints=waypoints,
+                wp1=i,
+                wp2=i+1)
+            # Assume constant acceleration
+            new_vel = math.sqrt(current_velocity_squared + 2 * MAX_DECEL * dist) + VELOCITY_OFFSET
+            if new_vel > self.get_waypoint_velocity(waypoints[i]):
+                return
+
+            self.set_waypoint_velocity(waypoints,
+                                       i,
+                                       new_vel)
 
     def decrease_for_stop(self, waypoints, stop_waypoint, traffic_light_waypoint):
         for i in range(0, stop_waypoint):
