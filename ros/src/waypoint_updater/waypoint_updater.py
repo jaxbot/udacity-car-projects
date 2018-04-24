@@ -55,7 +55,7 @@ class WaypointUpdater(object):
 
         current_car_wp_index = self.get_closest_waypoint(msg.pose)
 
-        start = current_car_wp_index + 1
+        start = current_car_wp_index
         waypoints_size = min(len(self.base_waypoints.waypoints), LOOKAHEAD_WPS)
 
         self.final_waypoints.waypoints = list(islice(
@@ -82,6 +82,7 @@ class WaypointUpdater(object):
                                             self.max_velocity)
         self.avoid_sudden_acceleration(self.final_waypoints.waypoints)
 
+        self.final_waypoints.waypoints = self.final_waypoints.waypoints[1:]
         self.final_waypoints_pub.publish(self.final_waypoints)
 
     def waypoints_cb(self, waypoints):
@@ -179,11 +180,11 @@ class WaypointUpdater(object):
         for i in range(len(waypoints) - 1):
             dist = self.distance(
                 waypoints=waypoints,
-                wp1=i,
+                wp1=0,
                 wp2=i+1)
             # Assume constant acceleration
             new_vel = math.sqrt(current_velocity_squared + 2 * MAX_DECEL * dist) + VELOCITY_OFFSET
-            if new_vel > self.get_waypoint_velocity(waypoints[i]):
+            if new_vel > self.get_waypoint_velocity(waypoints[i + 1]):
                 return
 
             self.set_waypoint_velocity(waypoints,
