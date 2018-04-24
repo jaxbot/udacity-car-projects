@@ -18,6 +18,7 @@ class TLDetector(object):
     def __init__(self):
         rospy.init_node('tl_detector')
 
+        self.busy = False
         self.pose = None
         self.waypoints = None
         self.camera_image = None
@@ -80,6 +81,15 @@ class TLDetector(object):
             msg (Image): image from car-mounted camera
 
         """
+        if len(self.lights) < 1:
+            print("Got image, ignoring because no lights are known.")
+            return False
+        if self.busy:
+            print("Busy, skipping frame.")
+            return False
+        else:
+            print("Processing image")
+            self.busy = True
         self.has_image = True
         self.camera_image = msg
         light_wp, state = self.process_traffic_lights()
@@ -101,6 +111,7 @@ class TLDetector(object):
         else:
             self.upcoming_red_light_pub.publish(Int32(self.last_wp))
         self.state_count += 1
+        self.busy = False
 
     def get_closest_waypoint(self, position):
         """Identifies the closest path waypoint to the given position
@@ -174,15 +185,13 @@ class TLDetector(object):
             self.prev_light_loc = None
             return False
 
-        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "bgr8")
+        cv_image = self.bridge.imgmsg_to_cv2(self.camera_image, "rgb8")
 
         # Classify using the TF light classifier if not available (from simulator)
-        if light.state != TrafficLight.UNKNOWN:
+        if light.state != TrafficLight.UNKNOWN and light.state != 3:
+            print("Using provided state: " + str(light.state))
             return light.state
         else:
-            # Reduce size of the input image when classifying since we don't need to process full resolution and otherwise
-            # are just wasting CPU/GPU time.
-            cv_image = cv2.resize(cv_image, (0,0), fx=0.75, fy=0.75)
             return self.light_classifier.get_classification(cv_image)
 
     def process_traffic_lights(self):
