@@ -33,6 +33,8 @@ class Controller(object):
         self.accel_filt = LowPassFilter(tau=10, ts=1)
         self.steer_filt = LowPassFilter(tau=5, ts=1)
         self.brake_filt = LowPassFilter(tau=1.5, ts=1)
+        # Set the accel_filter's initial value to 0
+        self.accel_filt.filt(0)
 
 
     def control(self, *args, **kwargs):
