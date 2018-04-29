@@ -119,7 +119,7 @@ class DBWNode(object):
         self.twist = msg.twist
 
     def dbw_enabled_cb(self, msg):
-        self.dbw_enabled = msg
+        self.dbw_enabled = msg.data
 
     def velocity_cb(self, msg):
         self.current_velocity = msg.twist.linear.x
