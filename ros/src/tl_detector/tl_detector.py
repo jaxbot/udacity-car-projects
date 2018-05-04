@@ -11,6 +11,8 @@ import tf
 import cv2
 import yaml
 import math
+import time
+import numpy as np
 
 STATE_COUNT_THRESHOLD = 3
 
@@ -18,7 +20,7 @@ class TLDetector(object):
     def __init__(self):
         rospy.init_node('tl_detector')
 
-        self.busy = False
+        self.last_busy = 0
         self.pose = None
         self.waypoints = None
         self.camera_image = None
@@ -41,6 +43,8 @@ class TLDetector(object):
         # Generate a list of stop line points from given configuration
         stop_line_positions = self.config['stop_line_positions']
         self.stop_line_points = [self.make_point(p[0], p[1], 0) for p in stop_line_positions]
+
+        self.light_classifier.get_classification(np.zeros((800,600,3)))
 
         sub1 = rospy.Subscriber('/current_pose', PoseStamped, self.pose_cb)
         sub2 = rospy.Subscriber('/base_waypoints', Lane, self.waypoints_cb)
@@ -84,12 +88,17 @@ class TLDetector(object):
         if len(self.lights) < 1:
             print("Got image, ignoring because no lights are known.")
             return False
-        if self.busy:
+        if self.waypoints is None:
+            print("Got image, ignoring because no waypoints are known.")
+            return False
+        # Skip frames received within 70ms of the previous so we do not saturate the pipeline
+        # images take ~50-100ms to process
+        if time.time() - self.last_busy < 70 / 1000:
             print("Busy, skipping frame.")
             return False
         else:
             print("Processing image")
-            self.busy = True
+            self.last_busy = time.time()
         self.has_image = True
         self.camera_image = msg
         light_wp, state = self.process_traffic_lights()
@@ -111,7 +120,6 @@ class TLDetector(object):
         else:
             self.upcoming_red_light_pub.publish(Int32(self.last_wp))
         self.state_count += 1
-        self.busy = False
 
     def get_closest_waypoint(self, position):
         """Identifies the closest path waypoint to the given position
