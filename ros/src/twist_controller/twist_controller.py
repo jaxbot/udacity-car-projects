@@ -30,7 +30,7 @@ class Controller(object):
                 mx=kwargs['max_steer_angle'],
                 mn=-1.0*kwargs['max_steer_angle'])
         # Filters:
-        self.accel_filt = LowPassFilter(tau=10, ts=1)
+        self.accel_filt = LowPassFilter(tau=10, ts=.2)
         self.steer_filt = LowPassFilter(tau=5, ts=1)
         self.brake_filt = LowPassFilter(tau=1.5, ts=1)
         # Set the accel_filter's initial value to 0
