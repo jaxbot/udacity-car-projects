@@ -1,0 +1,9 @@
+*.py[cod]
+
+build
+devel
+
+profile.tmp
+*.bag
+*.csv
+simulator
